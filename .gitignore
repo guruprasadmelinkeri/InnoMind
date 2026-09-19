@@ -1,0 +1,30 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables
+.env
+!.env.example
+
+# Node dependencies & build output
+node_modules/
+dist/
+build/
+*.log
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker volume data
+postgres_data/
