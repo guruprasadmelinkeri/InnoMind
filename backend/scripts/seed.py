@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from app.db.database import SessionLocal, engine, Base
 from app.models.hospital import Hospital
 from app.models.resource import HospitalResource, ResourceType
+from app.models.emergency import EmergencyCase, EmergencyRequirement, EmergencySeverity, EmergencyStatus
 
 SAMPLE_HOSPITALS = [
     {
@@ -56,12 +57,30 @@ SAMPLE_HOSPITALS = [
     }
 ]
 
+SAMPLE_EMERGENCIES = [
+    {
+        "case_number": "ER-000001",
+        "severity": EmergencySeverity.CRITICAL,
+        "patient_age": 34,
+        "description": "CRITICAL multi-vehicle collision on Highway 101 with severe trauma",
+        "pickup_latitude": Decimal("37.775000"),
+        "pickup_longitude": Decimal("-122.418000"),
+        "status": EmergencyStatus.CREATED,
+        "requirements": [
+            {"resource_type": ResourceType.ICU_BED, "quantity": 1, "required": True},
+            {"resource_type": ResourceType.VENTILATOR, "quantity": 1, "required": True},
+            {"resource_type": ResourceType.TRAUMA_BED, "quantity": 1, "required": True},
+        ]
+    }
+]
+
 def seed_database():
-    print("Seeding sample hospital database...")
+    print("Seeding sample hospital and emergency database...")
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        created_count = 0
+        # Seed Hospitals
+        created_hospitals = 0
         for data in SAMPLE_HOSPITALS:
             existing = db.query(Hospital).filter(Hospital.name == data["name"]).first()
             if existing:
@@ -74,17 +93,34 @@ def seed_database():
             db.flush()
 
             for res in resources_data:
-                resource = HospitalResource(
-                    hospital_id=hospital.id,
-                    **res
-                )
+                resource = HospitalResource(hospital_id=hospital.id, **res)
                 db.add(resource)
 
-            created_count += 1
+            created_hospitals += 1
             print(f"Created hospital: {hospital.name} with {len(resources_data)} resource types")
 
+        # Seed Emergencies
+        created_emergencies = 0
+        for e_data in SAMPLE_EMERGENCIES:
+            existing_e = db.query(EmergencyCase).filter(EmergencyCase.case_number == e_data["case_number"]).first()
+            if existing_e:
+                print(f"Skipping existing emergency case: {e_data['case_number']}")
+                continue
+
+            reqs_data = e_data.pop("requirements")
+            emergency = EmergencyCase(**e_data)
+            db.add(emergency)
+            db.flush()
+
+            for req in reqs_data:
+                requirement = EmergencyRequirement(emergency_case_id=emergency.id, **req)
+                db.add(requirement)
+
+            created_emergencies += 1
+            print(f"Created emergency case: {emergency.case_number} with {len(reqs_data)} requirements")
+
         db.commit()
-        print(f"Successfully seeded {created_count} hospitals.")
+        print(f"Successfully seeded {created_hospitals} hospitals and {created_emergencies} emergency cases.")
     except Exception as e:
         db.rollback()
         print(f"Error seeding database: {e}")

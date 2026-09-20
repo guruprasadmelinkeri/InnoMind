@@ -5,7 +5,7 @@
 
 ## 2. Tech Stack
 - **Frontend**: React, TypeScript, Vite, Tailwind CSS, Axios
-- **Backend**: Python 3.10+, FastAPI, Pydantic, SQLAlchemy, Alembic
+- **Backend**: Python 3.10+, FastAPI, Pydantic, SQLAlchemy, Alembic, Pytest
 - **Database**: PostgreSQL (Dockerized or local instance)
 - **Containerization**: Docker Compose (Database)
 
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 # Run database migrations with Alembic
 alembic upgrade head
 
-# Seed initial sample hospital data (CityCare, Metro General, Apex Trauma Center)
+# Seed initial sample hospitals and sample emergency case
 python scripts/seed.py
 
 # Start FastAPI server
@@ -69,7 +69,7 @@ Frontend application will be accessible at: `http://localhost:5173`
 
 ---
 
-## 4. Database Migrations & Seeding Commands
+## 4. Database Migrations, Seeding & Tests
 
 ### Run Migrations
 ```bash
@@ -77,23 +77,18 @@ cd backend
 alembic upgrade head
 ```
 
-### Generate New Migration
-```bash
-cd backend
-alembic revision --autogenerate -m "Descriptive migration message"
-```
-
-### Rollback Migration
-```bash
-cd backend
-alembic downgrade -1
-```
-
 ### Seed Sample Data
-Populates 3 fictional hospitals (`CityCare Hospital`, `Metro General Hospital`, `Apex Trauma Center`) with resources (`ICU_BED`, `VENTILATOR`, `OXYGEN_BED`, `GENERAL_BED`, `TRAUMA_BED`, `OPERATING_ROOM`):
+Populates 3 sample hospitals (`CityCare Hospital`, `Metro General Hospital`, `Apex Trauma Center`) and 1 sample emergency case (`ER-000001`):
 ```bash
 cd backend
 python scripts/seed.py
+```
+
+### Run Automated Unit Tests
+Run the emergency module test suite:
+```bash
+cd backend
+pytest tests/test_emergencies.py
 ```
 
 ---
@@ -103,21 +98,89 @@ python scripts/seed.py
 ### System
 - `GET /health` — Check system API status
 
-### Hospitals & Resources CRUD (`/api/hospitals`)
+### Hospitals & Resources (`/api/hospitals`)
 - `GET /api/hospitals` — List all hospitals with resource capacity
 - `GET /api/hospitals/{hospital_id}` — Get details of a specific hospital by ID
 - `POST /api/hospitals` — Register a new hospital
 - `GET /api/hospitals/{hospital_id}/resources` — Retrieve resource availability for a specific hospital
 - `POST /api/hospitals/{hospital_id}/resources` — Add or update resource records for a hospital
 
+### Emergency Cases (`/api/emergencies`)
+- `POST /api/emergencies` — Create a new emergency case with resource requirements
+- `GET /api/emergencies` — List all emergency cases
+- `GET /api/emergencies/{emergency_id}` — Get details of an emergency case with requirements
+- `PATCH /api/emergencies/{emergency_id}/status` — Update emergency case status (`CREATED`, `SEARCHING`, `HOSPITAL_SELECTED`, `EN_ROUTE`, `ARRIVED`, `HANDOFF_COMPLETED`, `CANCELLED`)
+- `DELETE /api/emergencies/{emergency_id}` — Cancel/delete an emergency case
+
 ---
 
-## 6. Current Implementation Status
-- **Phase 1 Complete**: Initial project structure, FastAPI server, Vite React frontend, Tailwind styling, Axios service, `/health` endpoint.
-- **Phase 2 Complete**:
-  - SQLAlchemy models for `Hospital` and `HospitalResource` with CheckConstraints (`available + reserved <= total`).
-  - ResourceType Enum (`ICU_BED`, `GENERAL_BED`, `VENTILATOR`, `OXYGEN_BED`, `TRAUMA_BED`, `OPERATING_ROOM`).
-  - Alembic database migration environment and initial migration script.
-  - Pydantic request/response validation schemas.
-  - CRUD API routes for Hospitals and Hospital Resources under `/api/hospitals`.
-  - Database seed script (`backend/scripts/seed.py`) populating sample data.
+## 6. Example Request: Create Emergency Case
+
+```bash
+curl -X POST "http://localhost:8000/api/emergencies" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "severity": "CRITICAL",
+    "patient_age": 34,
+    "description": "Multi-vehicle accident with critical head trauma",
+    "pickup_latitude": 37.775000,
+    "pickup_longitude": -122.418000,
+    "requirements": [
+      {
+        "resource_type": "ICU_BED",
+        "quantity": 1,
+        "required": true
+      },
+      {
+        "resource_type": "VENTILATOR",
+        "quantity": 1,
+        "required": true
+      },
+      {
+        "resource_type": "TRAUMA_BED",
+        "quantity": 1,
+        "required": true
+      }
+    ]
+  }'
+```
+
+**Response (`201 Created`):**
+```json
+{
+  "id": 1,
+  "case_number": "ER-000001",
+  "severity": "CRITICAL",
+  "patient_age": 34,
+  "description": "Multi-vehicle accident with critical head trauma",
+  "pickup_latitude": 37.775,
+  "pickup_longitude": -122.418,
+  "status": "CREATED",
+  "created_at": "2026-09-20T20:06:10.825227Z",
+  "updated_at": "2026-09-20T20:06:10.825227Z",
+  "requirements": [
+    {
+      "id": 1,
+      "emergency_case_id": 1,
+      "resource_type": "ICU_BED",
+      "quantity": 1,
+      "required": true,
+      "created_at": "2026-09-20T20:06:10.828456Z",
+      "updated_at": "2026-09-20T20:06:10.828456Z"
+    }
+  ]
+}
+```
+
+---
+
+## 7. Current Implementation Status
+- **Phase 1 Complete**: Project foundation, FastAPI backend, React Vite frontend, Tailwind styling, `/health` endpoint.
+- **Phase 2 Complete**: SQLAlchemy models for `Hospital` & `HospitalResource`, Alembic setup, Pydantic schemas, hospital CRUD APIs.
+- **Phase 3 Complete**:
+  - `EmergencyCase` and `EmergencyRequirement` SQLAlchemy models with sequential case numbers (`ER-000001`).
+  - Validation for coordinates (-90..90, -180..180), patient age (0..120), positive quantities (>0), and non-empty requirements list.
+  - Alembic migration `d15c93812f8f` establishing emergency tables.
+  - Emergency CRUD APIs (`POST`, `GET`, `PATCH status`, `DELETE`).
+  - Automated Pytest suite (`backend/tests/test_emergencies.py`) testing all validation rules and endpoint operations.
+  - Seed script updated with sample critical emergency case.

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from app.models.resource import ResourceType
 
 class ResourceBase(BaseModel):
@@ -27,7 +27,6 @@ class ResourceUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_totals_if_present(self):
-        # Validation when partial updates occur will be reinforced at the service/database layer
         return self
 
 class ResourceResponse(ResourceBase):
@@ -37,5 +36,4 @@ class ResourceResponse(ResourceBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
