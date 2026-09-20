@@ -2,19 +2,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 
-# Create SQLAlchemy engine using settings
-engine = create_engine(
-    settings.sync_database_url,
-    pool_pre_ping=True
-)
+url = settings.sync_database_url
+engine_kwargs = {"pool_pre_ping": True}
 
-# Create SessionLocal class for DB sessions
+if url.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+    # pool_pre_ping is not supported for NullPool/StaticPool in SQLite in some versions
+    engine_kwargs.pop("pool_pre_ping", None)
+
+engine = create_engine(url, **engine_kwargs)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base declarative class for future models
 Base = declarative_base()
 
-# Dependency to get DB session in FastAPI routes
 def get_db():
     db = SessionLocal()
     try:

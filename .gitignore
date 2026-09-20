@@ -28,3 +28,6 @@ build/
 
 # Docker volume data
 postgres_data/
+
+
+*.db
