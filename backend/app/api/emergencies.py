@@ -9,8 +9,18 @@ from app.schemas.emergency import (
     EmergencyCaseStatusUpdate
 )
 from app.schemas.allocation import RecommendationResponse
+from app.schemas.reservation import (
+    AllocationRequestCreate,
+    AllocationRequestResponse,
+    ReservationResponse
+)
 from app.services import emergency_service
 from app.services.allocation import rank_hospitals
+from app.services.reservation import (
+    create_allocation_request,
+    get_allocation_requests_for_emergency,
+    get_reservations_for_emergency
+)
 
 router = APIRouter(prefix="/emergencies", tags=["Emergencies"])
 
@@ -58,6 +68,31 @@ def get_hospital_recommendations(
     - Trauma/specialization match (10%)
     """
     return rank_hospitals(db, emergency_id)
+
+@router.post("/{emergency_id}/requests", response_model=AllocationRequestResponse, status_code=status.HTTP_201_CREATED, summary="Create allocation request to hospital")
+def create_request_for_emergency(
+    emergency_id: int,
+    request_in: AllocationRequestCreate,
+    db: Session = Depends(get_db)
+):
+    """Create an allocation request for an emergency case to a targeted hospital."""
+    return create_allocation_request(db, emergency_id, request_in.hospital_id)
+
+@router.get("/{emergency_id}/requests", response_model=List[AllocationRequestResponse], summary="Get allocation requests for emergency")
+def get_emergency_requests(
+    emergency_id: int,
+    db: Session = Depends(get_db)
+):
+    """List all allocation requests created for an emergency case."""
+    return get_allocation_requests_for_emergency(db, emergency_id)
+
+@router.get("/{emergency_id}/reservations", response_model=List[ReservationResponse], summary="Get reservations for emergency")
+def get_emergency_reservations(
+    emergency_id: int,
+    db: Session = Depends(get_db)
+):
+    """List all resource reservations created for an emergency case."""
+    return get_reservations_for_emergency(db, emergency_id)
 
 @router.patch("/{emergency_id}/status", response_model=EmergencyCaseResponse, summary="Update emergency status")
 def update_emergency_status(
