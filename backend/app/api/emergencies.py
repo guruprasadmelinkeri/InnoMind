@@ -8,7 +8,9 @@ from app.schemas.emergency import (
     EmergencyCaseResponse,
     EmergencyCaseStatusUpdate
 )
+from app.schemas.allocation import RecommendationResponse
 from app.services import emergency_service
+from app.services.allocation import rank_hospitals
 
 router = APIRouter(prefix="/emergencies", tags=["Emergencies"])
 
@@ -42,6 +44,20 @@ def get_emergency(
             detail=f"Emergency case with id {emergency_id} not found"
         )
     return emergency
+
+@router.get("/{emergency_id}/recommendations", response_model=RecommendationResponse, summary="Get hospital recommendations")
+def get_hospital_recommendations(
+    emergency_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Find suitable active hospitals for an emergency case and rank them based on:
+    - Resource match (45%)
+    - Travel distance/time (30%)
+    - Data freshness (15%)
+    - Trauma/specialization match (10%)
+    """
+    return rank_hospitals(db, emergency_id)
 
 @router.patch("/{emergency_id}/status", response_model=EmergencyCaseResponse, summary="Update emergency status")
 def update_emergency_status(
