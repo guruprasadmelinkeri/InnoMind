@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Ambulance, Building2, ShieldAlert, ChevronDown } from 'lucide-react';
 import type { Hospital } from '../../types/hospital';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 interface NavbarProps {
   hospitals: Hospital[];
@@ -16,6 +17,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { status: wsStatus } = useWebSocket(null);
 
   const isHospitalRoute = location.pathname.startsWith('/hospital');
 
@@ -33,24 +35,48 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Logo & Brand */}
-        <Link to="/dispatcher" className="flex items-center gap-3 group">
-          <div className="p-2.5 bg-gradient-to-tr from-rose-600 to-amber-500 rounded-2xl shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform duration-200">
-            <Ambulance className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-extrabold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent tracking-tight">
-                MediRoute
-              </span>
-              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                PROTOTYPE
-              </span>
+        <div className="flex items-center gap-4">
+          <Link to="/dispatcher" className="flex items-center gap-3 group">
+            <div className="p-2.5 bg-gradient-to-tr from-rose-600 to-amber-500 rounded-2xl shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform duration-200">
+              <Ambulance className="w-5 h-5 text-white" />
             </div>
-            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-              Emergency Resource Allocator
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-extrabold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent tracking-tight">
+                  MediRoute
+                </span>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                  PROTOTYPE
+                </span>
+              </div>
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                Emergency Resource Allocator
+              </p>
+            </div>
+          </Link>
+
+          {/* Real-Time WebSocket Connection Indicator */}
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-950 border border-slate-800">
+            {wsStatus === 'CONNECTED' && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-400 font-mono text-[11px]">LIVE — Real-time connection active</span>
+              </>
+            )}
+            {wsStatus === 'RECONNECTING' && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                <span className="text-amber-400 font-mono text-[11px]">RECONNECTING...</span>
+              </>
+            )}
+            {wsStatus === 'OFFLINE' && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-rose-500" />
+                <span className="text-rose-400 font-mono text-[11px]">OFFLINE</span>
+              </>
+            )}
           </div>
-        </Link>
+        </div>
 
         {/* View Selector & Switcher */}
         <div className="flex items-center gap-3">

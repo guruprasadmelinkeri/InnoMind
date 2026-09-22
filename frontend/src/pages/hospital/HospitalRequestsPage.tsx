@@ -15,6 +15,7 @@ import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../components/common/Toast';
 import { parseApiError } from '../../services/api';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import {
   Inbox,
   CheckCircle2,
@@ -103,6 +104,27 @@ export const HospitalRequestsPage: React.FC = () => {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  // Real-Time WebSocket Listener
+  useWebSocket(
+    [
+      'ALLOCATION_REQUEST_CREATED',
+      'ALLOCATION_REQUEST_ACCEPTED',
+      'ALLOCATION_REQUEST_REJECTED',
+    ],
+    (payload) => {
+      if (payload.data && payload.data.hospital_id === id) {
+        if (payload.event === 'ALLOCATION_REQUEST_CREATED') {
+          addToast(
+            'info',
+            'NEW EMERGENCY REQUEST',
+            `Received allocation request for Case #${payload.data.case_number || payload.data.emergency_id}`
+          );
+        }
+        fetchRequests(false);
+      }
+    }
+  );
 
   const handleAccept = async (request: AllocationRequest) => {
     setAcceptingId(request.id);

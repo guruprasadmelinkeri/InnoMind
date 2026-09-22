@@ -10,6 +10,7 @@ from app.models.emergency import EmergencyCase, EmergencyStatus
 from app.models.allocation_request import AllocationRequest, AllocationRequestStatus
 from app.models.reservation import Reservation, ReservationStatus
 from app.services.allocation import calculate_resource_match
+from app.websocket import WebSocketEvents, broadcast_event_sync
 
 DEFAULT_REQUEST_EXPIRATION_MINUTES = 10
 
@@ -91,6 +92,21 @@ def create_allocation_request(
     db.add(request)
     db.commit()
     db.refresh(request)
+
+    # Broadcast ONLY AFTER DB commit succeeds
+    broadcast_event_sync(
+        WebSocketEvents.ALLOCATION_REQUEST_CREATED,
+        {
+            "request_id": request.id,
+            "emergency_id": emergency.id,
+            "hospital_id": hospital.id,
+            "status": request.status.value if hasattr(request.status, 'value') else str(request.status),
+            "case_number": emergency.case_number,
+            "severity": emergency.severity.value if hasattr(emergency.severity, 'value') else str(emergency.severity),
+            "requested_at": request.requested_at.isoformat() if request.requested_at else None,
+        }
+    )
+
     return request
 
 def accept_allocation_request(db: Session, request_id: int) -> Dict[str, Any]:
@@ -201,7 +217,7 @@ def accept_allocation_request(db: Session, request_id: int) -> Dict[str, Any]:
         db.add(reservation)
 
         created_reservation_items.append({
-            "resource_type": req.resource_type,
+            "resource_type": req.resource_type.value if hasattr(req.resource_type, 'value') else str(req.resource_type),
             "quantity": req.quantity
         })
 
@@ -214,6 +230,56 @@ def accept_allocation_request(db: Session, request_id: int) -> Dict[str, Any]:
 
     hospital = db.query(Hospital).filter(Hospital.id == request.hospital_id).first()
     hospital_name = hospital.name if hospital else f"Hospital #{request.hospital_id}"
+
+    # Broadcast events ONLY AFTER successful DB commit
+    broadcast_event_sync(
+        WebSocketEvents.ALLOCATION_REQUEST_ACCEPTED,
+        {
+            "request_id": request.id,
+            "emergency_id": emergency.id,
+            "hospital_id": request.hospital_id,
+            "hospital_name": hospital_name,
+            "status": "ACCEPTED",
+            "responded_at": request.responded_at.isoformat() if request.responded_at else None
+        }
+    )
+
+    broadcast_event_sync(
+        WebSocketEvents.RESERVATION_CREATED,
+        {
+            "emergency_id": emergency.id,
+            "hospital_id": request.hospital_id,
+            "reservations": created_reservation_items
+        }
+    )
+
+    broadcast_event_sync(
+        WebSocketEvents.EMERGENCY_STATUS_UPDATED,
+        {
+            "emergency_id": emergency.id,
+            "case_number": emergency.case_number,
+            "status": emergency.status.value if hasattr(emergency.status, 'value') else str(emergency.status)
+        }
+    )
+
+    for req in emergency.requirements:
+        res_row = db.query(HospitalResource).filter(
+            HospitalResource.hospital_id == request.hospital_id,
+            HospitalResource.resource_type == req.resource_type
+        ).first()
+        if res_row:
+            broadcast_event_sync(
+                WebSocketEvents.RESOURCE_UPDATED,
+                {
+                    "hospital_id": request.hospital_id,
+                    "resource_id": res_row.id,
+                    "resource_type": res_row.resource_type.value if hasattr(res_row.resource_type, 'value') else str(res_row.resource_type),
+                    "total": res_row.total,
+                    "available": res_row.available,
+                    "reserved": res_row.reserved,
+                    "last_updated": res_row.last_updated.isoformat() if res_row.last_updated else None
+                }
+            )
 
     return {
         "request_id": request.id,
@@ -251,4 +317,19 @@ def reject_allocation_request(
 
     db.commit()
     db.refresh(request)
+
+    # Broadcast ONLY AFTER DB commit succeeds
+    broadcast_event_sync(
+        WebSocketEvents.ALLOCATION_REQUEST_REJECTED,
+        {
+            "request_id": request.id,
+            "emergency_id": request.emergency_case_id,
+            "hospital_id": request.hospital_id,
+            "status": "REJECTED",
+            "rejection_reason": reason,
+            "responded_at": request.responded_at.isoformat() if request.responded_at else None
+        }
+    )
+
     return request
+

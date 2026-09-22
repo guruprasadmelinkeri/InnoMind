@@ -7,6 +7,7 @@ import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../components/common/Toast';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import {
   Building2,
   MapPin,
@@ -67,6 +68,33 @@ export const HospitalDashboard: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Real-Time WebSocket Event Subscriptions
+  useWebSocket(['RESOURCE_UPDATED', 'RESERVATION_CREATED'], (payload) => {
+    if (payload.event === 'RESOURCE_UPDATED' && payload.data) {
+      if (payload.data.hospital_id === id) {
+        setResources((prev) =>
+          prev.map((r) =>
+            r.id === payload.data.resource_id || r.resource_type === payload.data.resource_type
+              ? {
+                  ...r,
+                  available: payload.data.available,
+                  reserved: payload.data.reserved,
+                  total: payload.data.total,
+                  last_updated: payload.data.last_updated || new Date().toISOString(),
+                }
+              : r
+          )
+        );
+        addToast('info', 'Capacity Updated', `${payload.data.resource_type} updated to ${payload.data.available} available.`);
+      }
+    } else if (payload.event === 'RESERVATION_CREATED' && payload.data) {
+      if (payload.data.hospital_id === id) {
+        fetchData(false);
+        addToast('success', 'New Resource Reservation Locked', 'Resource capacity has been reserved for incoming emergency case.');
+      }
+    }
+  });
 
   const handleOpenEdit = (res: HospitalResource) => {
     setEditingResource(res);

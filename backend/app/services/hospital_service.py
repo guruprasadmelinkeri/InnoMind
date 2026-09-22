@@ -6,6 +6,7 @@ from app.models.hospital import Hospital
 from app.models.resource import HospitalResource
 from app.schemas.hospital import HospitalCreate
 from app.schemas.resource import ResourceCreate
+from app.websocket import WebSocketEvents, broadcast_event_sync
 
 def get_hospitals(db: Session, skip: int = 0, limit: int = 100) -> List[Hospital]:
     return db.query(Hospital).offset(skip).limit(limit).all()
@@ -39,6 +40,16 @@ def create_hospital(db: Session, hospital_in: HospitalCreate) -> Hospital:
 
     db.commit()
     db.refresh(hospital)
+
+    broadcast_event_sync(
+        WebSocketEvents.HOSPITAL_STATUS_UPDATED,
+        {
+            "hospital_id": hospital.id,
+            "name": hospital.name,
+            "status": hospital.status
+        }
+    )
+
     return hospital
 
 def get_hospital_resources(db: Session, hospital_id: int) -> List[HospitalResource]:
@@ -88,6 +99,20 @@ def add_or_update_hospital_resource(
         existing_resource.reserved = resource_in.reserved
         db.commit()
         db.refresh(existing_resource)
+
+        broadcast_event_sync(
+            WebSocketEvents.RESOURCE_UPDATED,
+            {
+                "hospital_id": existing_resource.hospital_id,
+                "resource_id": existing_resource.id,
+                "resource_type": existing_resource.resource_type.value if hasattr(existing_resource.resource_type, 'value') else str(existing_resource.resource_type),
+                "total": existing_resource.total,
+                "available": existing_resource.available,
+                "reserved": existing_resource.reserved,
+                "last_updated": existing_resource.last_updated.isoformat() if existing_resource.last_updated else None
+            }
+        )
+
         return existing_resource
 
     # Create new resource
@@ -101,4 +126,19 @@ def add_or_update_hospital_resource(
     db.add(resource)
     db.commit()
     db.refresh(resource)
+
+    broadcast_event_sync(
+        WebSocketEvents.RESOURCE_UPDATED,
+        {
+            "hospital_id": resource.hospital_id,
+            "resource_id": resource.id,
+            "resource_type": resource.resource_type.value if hasattr(resource.resource_type, 'value') else str(resource.resource_type),
+            "total": resource.total,
+            "available": resource.available,
+            "reserved": resource.reserved,
+            "last_updated": resource.last_updated.isoformat() if resource.last_updated else None
+        }
+    )
+
     return resource
+

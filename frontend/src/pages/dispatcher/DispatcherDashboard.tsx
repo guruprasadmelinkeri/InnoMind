@@ -12,14 +12,18 @@ import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { EmptyState } from '../../components/common/EmptyState';
 import { parseApiError } from '../../services/api';
 
+import { useToast } from '../../components/common/Toast';
+import { useWebSocket } from '../../hooks/useWebSocket';
+
 export const DispatcherDashboard: React.FC = () => {
   const [emergencies, setEmergencies] = useState<EmergencyCase[]>([]);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { addToast } = useToast();
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const [eData, hData] = await Promise.all([getEmergencies(), getHospitals()]);
@@ -28,13 +32,64 @@ export const DispatcherDashboard: React.FC = () => {
     } catch (err) {
       setError(parseApiError(err).message);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
   }, []);
+
+  // Listen to Real-Time WebSocket Events
+  useWebSocket(
+    [
+      'RESOURCE_UPDATED',
+      'ALLOCATION_REQUEST_ACCEPTED',
+      'ALLOCATION_REQUEST_REJECTED',
+      'EMERGENCY_STATUS_UPDATED',
+    ],
+    (payload) => {
+      if (payload.event === 'RESOURCE_UPDATED' && payload.data) {
+        const { hospital_id, resource_id, resource_type, available, reserved, total } = payload.data;
+        setHospitals((prev) =>
+          prev.map((h) => {
+            if (h.id === hospital_id && h.resources) {
+              const updatedResources = h.resources.map((r) =>
+                r.id === resource_id || r.resource_type === resource_type
+                  ? { ...r, available, reserved, total }
+                  : r
+              );
+              return { ...h, resources: updatedResources };
+            }
+            return h;
+          })
+        );
+        addToast('info', 'Hospital Resource Availability Updated', `Hospital #${hospital_id} ${resource_type}: ${available} available`);
+      } else if (payload.event === 'ALLOCATION_REQUEST_ACCEPTED' && payload.data) {
+        addToast(
+          'success',
+          'Hospital Accepted Request',
+          `${payload.data.hospital_name || 'Hospital'} accepted emergency request #${payload.data.emergency_id}`
+        );
+        fetchData(false);
+      } else if (payload.event === 'ALLOCATION_REQUEST_REJECTED' && payload.data) {
+        addToast(
+          'warning',
+          'Request Rejected',
+          `Hospital #${payload.data.hospital_id} rejected allocation request: ${payload.data.rejection_reason || 'No reason provided'}`
+        );
+        fetchData(false);
+      } else if (payload.event === 'EMERGENCY_STATUS_UPDATED' && payload.data) {
+        setEmergencies((prev) =>
+          prev.map((e) =>
+            e.id === payload.data.emergency_id
+              ? { ...e, status: payload.data.status }
+              : e
+          )
+        );
+      }
+    }
+  );
 
   // Compute KPI Statistics
   const activeEmergencies = emergencies.filter(

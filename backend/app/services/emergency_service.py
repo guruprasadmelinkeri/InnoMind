@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 
 from app.models.emergency import EmergencyCase, EmergencyRequirement, EmergencyStatus
 from app.schemas.emergency import EmergencyCaseCreate, EmergencyCaseStatusUpdate
+from app.websocket import WebSocketEvents, broadcast_event_sync
 
 def generate_case_number(db: Session) -> str:
     """Generate sequential case number formatted as ER-000001, ER-000002, etc."""
@@ -64,6 +65,16 @@ def create_emergency_case(db: Session, emergency_in: EmergencyCaseCreate) -> Eme
 
     db.commit()
     db.refresh(emergency)
+
+    broadcast_event_sync(
+        WebSocketEvents.EMERGENCY_STATUS_UPDATED,
+        {
+            "emergency_id": emergency.id,
+            "case_number": emergency.case_number,
+            "status": emergency.status.value if hasattr(emergency.status, 'value') else str(emergency.status)
+        }
+    )
+
     return emergency
 
 def update_emergency_status(
@@ -81,6 +92,16 @@ def update_emergency_status(
     emergency.status = status_update.status
     db.commit()
     db.refresh(emergency)
+
+    broadcast_event_sync(
+        WebSocketEvents.EMERGENCY_STATUS_UPDATED,
+        {
+            "emergency_id": emergency.id,
+            "case_number": emergency.case_number,
+            "status": emergency.status.value if hasattr(emergency.status, 'value') else str(emergency.status)
+        }
+    )
+
     return emergency
 
 def delete_emergency_case(db: Session, emergency_id: int) -> bool:
@@ -94,3 +115,4 @@ def delete_emergency_case(db: Session, emergency_id: int) -> bool:
     db.delete(emergency)
     db.commit()
     return True
+
