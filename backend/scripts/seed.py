@@ -9,6 +9,13 @@ from app.db.database import SessionLocal, engine, Base
 from app.models.hospital import Hospital
 from app.models.resource import HospitalResource, ResourceType
 from app.models.emergency import EmergencyCase, EmergencyRequirement, EmergencySeverity, EmergencyStatus
+from app.models.ambulance import Ambulance, AmbulanceStatus
+
+SAMPLE_AMBULANCES = [
+    {"vehicle_number": "MH12AB1234", "status": AmbulanceStatus.AVAILABLE, "current_latitude": 37.7749, "current_longitude": -122.4194},
+    {"vehicle_number": "MH12CD5678", "status": AmbulanceStatus.AVAILABLE, "current_latitude": 37.7833, "current_longitude": -122.4167},
+    {"vehicle_number": "MH14EF9012", "status": AmbulanceStatus.AVAILABLE, "current_latitude": 37.7650, "current_longitude": -122.4250},
+]
 
 SAMPLE_HOSPITALS = [
     {
@@ -75,10 +82,22 @@ SAMPLE_EMERGENCIES = [
 ]
 
 def seed_database():
-    print("Seeding sample hospital and emergency database...")
+    print("Seeding sample hospital, emergency, and ambulance database...")
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        # Seed Ambulances
+        created_ambulances = 0
+        for amb in SAMPLE_AMBULANCES:
+            existing_amb = db.query(Ambulance).filter(Ambulance.vehicle_number == amb["vehicle_number"]).first()
+            if existing_amb:
+                print(f"Skipping existing ambulance: {amb['vehicle_number']}")
+                continue
+            ambulance = Ambulance(**amb)
+            db.add(ambulance)
+            created_ambulances += 1
+            print(f"Created ambulance: {ambulance.vehicle_number}")
+
         # Seed Hospitals
         created_hospitals = 0
         for data in SAMPLE_HOSPITALS:
@@ -120,7 +139,7 @@ def seed_database():
             print(f"Created emergency case: {emergency.case_number} with {len(reqs_data)} requirements")
 
         db.commit()
-        print(f"Successfully seeded {created_hospitals} hospitals and {created_emergencies} emergency cases.")
+        print(f"Successfully seeded {created_ambulances} ambulances, {created_hospitals} hospitals, and {created_emergencies} emergency cases.")
     except Exception as e:
         db.rollback()
         print(f"Error seeding database: {e}")

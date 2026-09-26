@@ -2,14 +2,19 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import type { AllocationRequest } from '../../types/reservation';
 import type { EmergencyCase } from '../../types/emergency';
+import type { Ambulance } from '../../types/ambulance';
+import type { Handoff } from '../../types/handoff';
 import { getEmergencies } from '../../services/emergencyApi';
 import { getEmergencyRequests } from '../../services/allocationApi';
 import { acceptAllocationRequest, rejectAllocationRequest } from '../../services/reservationApi';
 import { getHospitalById } from '../../services/hospitalApi';
+import { getAmbulances } from '../../services/ambulanceApi';
+import { getHandoff } from '../../services/handoffApi';
 import type { Hospital } from '../../types/hospital';
 import { SeverityBadge } from '../../components/emergencies/SeverityBadge';
 import { StatusBadge } from '../../components/emergencies/StatusBadge';
 import { RejectModal } from '../../components/hospitals/RejectModal';
+import { HospitalHandoffCard } from '../../components/hospitals/HospitalHandoffCard';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { Modal } from '../../components/common/Modal';
@@ -35,6 +40,12 @@ interface CombinedRequestItem {
   emergency: EmergencyCase;
 }
 
+interface ActiveHandoffItem {
+  emergency: EmergencyCase;
+  ambulance: Ambulance | null;
+  handoff: Handoff | null;
+}
+
 export const HospitalRequestsPage: React.FC = () => {
   const { hospitalId } = useParams<{ hospitalId: string }>();
   const id = Number(hospitalId);
@@ -42,6 +53,7 @@ export const HospitalRequestsPage: React.FC = () => {
 
   const [hospital, setHospital] = useState<Hospital | null>(null);
   const [items, setItems] = useState<CombinedRequestItem[]>([]);
+  const [activeHandoffs, setActiveHandoffs] = useState<ActiveHandoffItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,18 +79,37 @@ export const HospitalRequestsPage: React.FC = () => {
     else setLoading(true);
 
     try {
-      const [hData, emergencies] = await Promise.all([
+      const [hData, emergencies, ambulancesData] = await Promise.all([
         getHospitalById(id),
         getEmergencies(),
+        getAmbulances(),
       ]);
       setHospital(hData);
 
       // Fetch requests for all emergencies and filter for this hospital
       const combined: CombinedRequestItem[] = [];
+      const handoffsList: ActiveHandoffItem[] = [];
+
       const requestsPromises = emergencies.map(async (emergency) => {
         try {
           const reqs = await getEmergencyRequests(emergency.id);
           const hospitalReqs = reqs.filter((r) => r.hospital_id === id);
+
+          // Check if emergency is arrived or in handoff for this hospital
+          const isAcceptedForThisHospital = hospitalReqs.some((r) => r.status === 'ACCEPTED');
+          if (isAcceptedForThisHospital && ['ARRIVED', 'HANDOFF_COMPLETED'].includes(emergency.status)) {
+            let handoffData: Handoff | null = null;
+            try {
+              handoffData = await getHandoff(emergency.id);
+            } catch {
+              handoffData = null;
+            }
+            const amb = emergency.assigned_ambulance_id
+              ? ambulancesData.find((a) => a.id === emergency.assigned_ambulance_id) || null
+              : null;
+            handoffsList.push({ emergency, ambulance: amb, handoff: handoffData });
+          }
+
           return hospitalReqs.map((r) => ({ request: r, emergency }));
         } catch {
           return [];
@@ -92,6 +123,7 @@ export const HospitalRequestsPage: React.FC = () => {
       combined.sort((a, b) => new Date(b.request.requested_at).getTime() - new Date(a.request.requested_at).getTime());
 
       setItems(combined);
+      setActiveHandoffs(handoffsList);
       setError(null);
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to load hospital allocation requests.');
@@ -111,18 +143,27 @@ export const HospitalRequestsPage: React.FC = () => {
       'ALLOCATION_REQUEST_CREATED',
       'ALLOCATION_REQUEST_ACCEPTED',
       'ALLOCATION_REQUEST_REJECTED',
+      'AMBULANCE_ARRIVED',
+      'HANDOFF_STARTED',
+      'HANDOFF_COMPLETED',
+      'AMBULANCE_STATUS_UPDATED',
+      'EMERGENCY_STATUS_UPDATED',
     ],
     (payload) => {
-      if (payload.data && payload.data.hospital_id === id) {
-        if (payload.event === 'ALLOCATION_REQUEST_CREATED') {
-          addToast(
-            'info',
-            'NEW EMERGENCY REQUEST',
-            `Received allocation request for Case #${payload.data.case_number || payload.data.emergency_id}`
-          );
-        }
-        fetchRequests(false);
+      if (payload.event === 'AMBULANCE_ARRIVED' && payload.data?.hospital_id === id) {
+        addToast(
+          'info',
+          '🚑 AMBULANCE ARRIVED AT HOSPITAL',
+          `Ambulance #${payload.data.vehicle_number || ''} has arrived with Case #${payload.data.case_number}`
+        );
+      } else if (payload.event === 'ALLOCATION_REQUEST_CREATED' && payload.data?.hospital_id === id) {
+        addToast(
+          'info',
+          'NEW EMERGENCY REQUEST',
+          `Received allocation request for Case #${payload.data.case_number || payload.data.emergency_id}`
+        );
       }
+      fetchRequests(false);
     }
   );
 
@@ -194,7 +235,7 @@ export const HospitalRequestsPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black text-slate-100 flex items-center gap-3">
-              <Inbox className="w-7 h-7 text-emerald-400" /> Allocation Requests
+              <Inbox className="w-7 h-7 text-emerald-400" /> Allocation Requests & Handoffs
             </h1>
             {pendingCount > 0 && (
               <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-500 text-white animate-pulse">
@@ -224,6 +265,24 @@ export const HospitalRequestsPage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Active Ambulance Arrival / Handoff Alerts Section */}
+      {activeHandoffs.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-amber-400">
+            Incoming Ambulance Handoff Alerts ({activeHandoffs.length})
+          </h2>
+          {activeHandoffs.map((item) => (
+            <HospitalHandoffCard
+              key={item.emergency.id}
+              emergency={item.emergency}
+              ambulance={item.ambulance}
+              handoff={item.handoff}
+              onRefresh={() => fetchRequests(false)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto">

@@ -105,10 +105,18 @@ npm run dev
    - Upon successful commit, `ALLOCATION_REQUEST_ACCEPTED`, `RESERVATION_CREATED`, `EMERGENCY_STATUS_UPDATED`, and `RESOURCE_UPDATED` events are broadcast to all connected WebSocket clients.
    - In Browser Window 1 (Dispatcher Dashboard), the request status badge instantly changes to **ACCEPTED** with a green toast notification, without requiring a page refresh.
 
-5. **Resource Availability Verification**:
-   - Navigate to `/hospital/1` dashboard. Observe that ICU Bed and Ventilator `available` counts decrease and `reserved` counts increase in real time.
+5. **Ambulance Assignment & En Route Simulation**:
+   - Once the hospital confirms the reservation, select an available unit (e.g. `MH12AB1234`) on the Dispatcher Emergency Detail page and click **ASSIGN AMBULANCE**.
+   - The status updates to `EN_ROUTE` and `AMBULANCE_ASSIGNED` / `AMBULANCE_STATUS_UPDATED` events are broadcast.
+   - Click **[ MARK ARRIVED ]** to simulate ambulance arrival at hospital triage.
 
-6. **Double-Booking & Conflict Handling (HTTP 409)**:
+6. **Hospital Patient Handoff Workflow**:
+   - In Window 2 (Hospital Portal), an alert banner instantly appears: `🚑 AMBULANCE ARRIVED AT HOSPITAL`.
+   - Hospital staff click **[ START HANDOFF ]** (`PENDING` -> `IN_PROGRESS`).
+   - Staff fill in receiving doctor details (e.g. *"Dr. Sarah Jenkins"*) and clinical notes, then click **[ COMPLETE HANDOFF ]**.
+   - Handoff status becomes `COMPLETED`, emergency status transitions to `HANDOFF_COMPLETED`, and the ambulance returns to `AVAILABLE` status automatically.
+
+7. **Double-Booking & Conflict Handling (HTTP 409)**:
    - If two dispatchers attempt to reserve the last available ventilator simultaneously, the second acceptance request fails atomically.
    - The frontend intercepts the HTTP 409 Conflict response without optimistic state corruption and displays the **Atomic Reservation Failed** error modal.
 
@@ -130,7 +138,12 @@ npm run dev
 | `ALLOCATION_REQUEST_ACCEPTED` | Hospital accepts request | `request_id`, `emergency_id`, `hospital_id`, `status` (`ACCEPTED`), `responded_at` |
 | `ALLOCATION_REQUEST_REJECTED` | Hospital rejects request | `request_id`, `emergency_id`, `hospital_id`, `status` (`REJECTED`), `rejection_reason` |
 | `RESERVATION_CREATED` | Atomic reservation finalized | `reservation_id`, `emergency_id`, `hospital_id`, `resource_type`, `quantity`, `expires_at` |
-| `EMERGENCY_STATUS_UPDATED` | Status change (e.g. `ASSIGNED`, `EN_ROUTE`) | `emergency_id`, `status`, `assigned_hospital_id` |
+| `EMERGENCY_STATUS_UPDATED` | Status change (e.g. `ASSIGNED`, `EN_ROUTE`, `ARRIVED`, `HANDOFF_COMPLETED`) | `emergency_id`, `status`, `assigned_hospital_id` |
+| `AMBULANCE_ASSIGNED` | Ambulance assigned to emergency | `ambulance_id`, `vehicle_number`, `emergency_id`, `hospital_id` |
+| `AMBULANCE_STATUS_UPDATED` | Ambulance status transition | `ambulance_id`, `vehicle_number`, `status` (`EN_ROUTE`, `ARRIVED`, `AVAILABLE`) |
+| `AMBULANCE_ARRIVED` | Ambulance arrives at hospital triage | `ambulance_id`, `vehicle_number`, `emergency_id`, `hospital_id`, `case_number` |
+| `HANDOFF_STARTED` | Hospital staff starts handoff | `handoff_id`, `emergency_id`, `hospital_id`, `status` (`IN_PROGRESS`) |
+| `HANDOFF_COMPLETED` | Patient handoff completed | `handoff_id`, `emergency_id`, `hospital_id`, `status` (`COMPLETED`), `received_by`, `notes` |
 
 ### Frontend Integration & Resilience
 - **Singleton Service**: `frontend/src/services/websocket.ts` manages reconnection backoff (1s, 2s, 5s).
@@ -139,9 +152,23 @@ npm run dev
 
 ---
 
-## 7. Automated Test Suites
+## 7. Phase 8 Ambulance & Handoff API Reference
 
-Run backend automated unit, integration, and WebSocket test suites:
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/ambulances` | `GET` | List all ambulances and current statuses |
+| `/api/ambulances/{id}` | `GET` | Get single ambulance details |
+| `/api/ambulances/{id}/status` | `PATCH` | Patch ambulance status (`ASSIGNED`, `EN_ROUTE`, `ARRIVED`) |
+| `/api/emergencies/{id}/assign-ambulance` | `POST` | Assign available ambulance to emergency |
+| `/api/emergencies/{id}/handoff/start` | `POST` | Start patient handoff at hospital |
+| `/api/emergencies/{id}/handoff/complete` | `POST` | Complete patient handoff and release ambulance |
+| `/api/emergencies/{id}/handoff` | `GET` | Get handoff status and clinical record |
+
+---
+
+## 8. Automated Test Suites
+
+Run backend automated unit, integration, and WebSocket test suites (37 test cases):
 ```bash
 cd backend
 pytest tests/
@@ -155,7 +182,7 @@ npm run build
 
 ---
 
-## 8. Current Implementation Status
+## 9. Current Implementation Status
 - **Phase 1 Complete**: Project foundation, FastAPI backend, React Vite frontend, Tailwind styling, `/health` endpoint.
 - **Phase 2 Complete**: SQLAlchemy models for `Hospital` & `HospitalResource`, Alembic setup, hospital CRUD APIs.
 - **Phase 3 Complete**: `EmergencyCase` & `EmergencyRequirement` models, validation, emergency CRUD APIs.
@@ -163,3 +190,4 @@ npm run build
 - **Phase 5 Complete**: Atomic Resource Reservation, `AllocationRequest` model, concurrency locking, double-booking protection (HTTP 409).
 - **Phase 6 Complete**: Frontend Dashboards (Dispatcher Command Center, Create Incident, Recommendation View, Hospital Capacity Portal, Allocation Requests, Toast notifications, 409 Conflict Modals).
 - **Phase 7 Complete**: Real-Time Updates using WebSockets (`ws://localhost:8000/ws`), `COMMIT -> BROADCAST` event manager, auto-reconnecting frontend socket service, live navigation connection status indicator, and multi-browser dynamic updates without page reloads.
+- **Phase 8 Complete**: Ambulance & End-to-End Handoff Workflow (`Ambulance` & `Handoff` models, ambulance assignment, journey status simulation, hospital triage arrival alerts, `START HANDOFF` / `COMPLETE HANDOFF` form, automatic ambulance release to `AVAILABLE`, visual live status timeline, 12 new unit tests, and 6 new WebSocket event broadcasts).

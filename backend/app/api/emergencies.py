@@ -14,7 +14,9 @@ from app.schemas.reservation import (
     AllocationRequestResponse,
     ReservationResponse
 )
-from app.services import emergency_service
+from app.schemas.ambulance import AmbulanceAssignRequest
+from app.schemas.handoff import HandoffRead, HandoffCompleteRequest
+from app.services import emergency_service, ambulance_service
 from app.services.allocation import rank_hospitals
 from app.services.reservation import (
     create_allocation_request,
@@ -94,6 +96,40 @@ def get_emergency_reservations(
     """List all resource reservations created for an emergency case."""
     return get_reservations_for_emergency(db, emergency_id)
 
+@router.post("/{emergency_id}/assign-ambulance", response_model=EmergencyCaseResponse, summary="Assign ambulance to emergency case")
+def assign_ambulance(
+    emergency_id: int,
+    assign_in: AmbulanceAssignRequest,
+    db: Session = Depends(get_db)
+):
+    """Assign an available ambulance to an emergency case."""
+    return ambulance_service.assign_ambulance_to_emergency(db, emergency_id, assign_in.ambulance_id)
+
+@router.post("/{emergency_id}/handoff/start", response_model=HandoffRead, summary="Start hospital handoff")
+def start_handoff_api(
+    emergency_id: int,
+    db: Session = Depends(get_db)
+):
+    """Start patient handoff process upon ambulance arrival at hospital."""
+    return ambulance_service.start_handoff(db, emergency_id)
+
+@router.post("/{emergency_id}/handoff/complete", response_model=HandoffRead, summary="Complete hospital handoff")
+def complete_handoff_api(
+    emergency_id: int,
+    handoff_in: HandoffCompleteRequest,
+    db: Session = Depends(get_db)
+):
+    """Complete patient handoff at hospital and release ambulance."""
+    return ambulance_service.complete_handoff(db, emergency_id, handoff_in.received_by, handoff_in.notes)
+
+@router.get("/{emergency_id}/handoff", response_model=HandoffRead, summary="Get emergency handoff details")
+def get_handoff_api(
+    emergency_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get handoff status and details for an emergency case."""
+    return ambulance_service.get_handoff_for_emergency(db, emergency_id)
+
 @router.patch("/{emergency_id}/status", response_model=EmergencyCaseResponse, summary="Update emergency status")
 def update_emergency_status(
     emergency_id: int,
@@ -111,3 +147,4 @@ def delete_emergency(
     """Cancel or delete an emergency case by ID."""
     emergency_service.delete_emergency_case(db, emergency_id)
     return {"status": "success", "message": f"Emergency case {emergency_id} has been cancelled"}
+

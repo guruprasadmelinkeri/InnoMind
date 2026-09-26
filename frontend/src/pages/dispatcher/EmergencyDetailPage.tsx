@@ -1,19 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ShieldAlert, MapPin, Award, Compass, Loader2 } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, MapPin, Award, Compass, Loader2, Truck, CheckCircle, Navigation } from 'lucide-react';
 import { getEmergencyById } from '../../services/emergencyApi';
 import { getRecommendations, createAllocationRequest, getEmergencyRequests } from '../../services/allocationApi';
+import { getAmbulances, assignAmbulance, updateAmbulanceStatus } from '../../services/ambulanceApi';
+import { getHandoff } from '../../services/handoffApi';
 import type { EmergencyCase } from '../../types/emergency';
 import type { RecommendationResponse } from '../../types/allocation';
 import type { AllocationRequest } from '../../types/reservation';
+import type { Ambulance } from '../../types/ambulance';
+import type { Handoff } from '../../types/handoff';
 import { SeverityBadge } from '../../components/emergencies/SeverityBadge';
 import { StatusBadge } from '../../components/emergencies/StatusBadge';
 import { RecommendationCard } from '../../components/allocation/RecommendationCard';
 import { IneligibleCard } from '../../components/allocation/IneligibleCard';
+import { EmergencyTimeline } from '../../components/emergencies/EmergencyTimeline';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { useToast } from '../../components/common/Toast';
 import { parseApiError } from '../../services/api';
+import { wsService, WS_EVENTS } from '../../services/websocket';
 
 export const EmergencyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,33 +29,75 @@ export const EmergencyDetailPage: React.FC = () => {
   const [emergency, setEmergency] = useState<EmergencyCase | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
   const [requests, setRequests] = useState<AllocationRequest[]>([]);
+  const [ambulances, setAmbulances] = useState<Ambulance[]>([]);
+  const [handoff, setHandoff] = useState<Handoff | null>(null);
 
+  const [selectedAmbulanceId, setSelectedAmbulanceId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [submittingHospitalId, setSubmittingHospitalId] = useState<number | null>(null);
+  const [assigningAmbulance, setAssigningAmbulance] = useState(false);
+  const [updatingAmbulanceStatus, setUpdatingAmbulanceStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!emergencyId || isNaN(emergencyId)) return;
-    setLoading(true);
-    setError(null);
     try {
-      const [eData, reqsData] = await Promise.all([
+      const [eData, reqsData, ambData] = await Promise.all([
         getEmergencyById(emergencyId),
         getEmergencyRequests(emergencyId),
+        getAmbulances(),
       ]);
       setEmergency(eData);
       setRequests(reqsData);
+      setAmbulances(ambData);
+
+      if (['ARRIVED', 'HANDOFF_COMPLETED'].includes(eData.status)) {
+        try {
+          const hData = await getHandoff(emergencyId);
+          setHandoff(hData);
+        } catch {
+          setHandoff(null);
+        }
+      }
     } catch (err) {
       setError(parseApiError(err).message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [emergencyId]);
 
   useEffect(() => {
     fetchData();
-  }, [emergencyId]);
+  }, [fetchData]);
+
+  // WebSocket Live Subscriptions
+  useEffect(() => {
+    if (!emergencyId) return;
+
+    const handleEvent = (payload: any) => {
+      console.log('EmergencyDetailPage WS Payload:', payload);
+      fetchData();
+    };
+
+    wsService.subscribe(WS_EVENTS.ALLOCATION_REQUEST_ACCEPTED, handleEvent);
+    wsService.subscribe(WS_EVENTS.AMBULANCE_ASSIGNED, handleEvent);
+    wsService.subscribe(WS_EVENTS.AMBULANCE_STATUS_UPDATED, handleEvent);
+    wsService.subscribe(WS_EVENTS.EMERGENCY_STATUS_UPDATED, handleEvent);
+    wsService.subscribe(WS_EVENTS.AMBULANCE_ARRIVED, handleEvent);
+    wsService.subscribe(WS_EVENTS.HANDOFF_STARTED, handleEvent);
+    wsService.subscribe(WS_EVENTS.HANDOFF_COMPLETED, handleEvent);
+
+    return () => {
+      wsService.unsubscribe(WS_EVENTS.ALLOCATION_REQUEST_ACCEPTED, handleEvent);
+      wsService.unsubscribe(WS_EVENTS.AMBULANCE_ASSIGNED, handleEvent);
+      wsService.unsubscribe(WS_EVENTS.AMBULANCE_STATUS_UPDATED, handleEvent);
+      wsService.unsubscribe(WS_EVENTS.EMERGENCY_STATUS_UPDATED, handleEvent);
+      wsService.unsubscribe(WS_EVENTS.AMBULANCE_ARRIVED, handleEvent);
+      wsService.unsubscribe(WS_EVENTS.HANDOFF_STARTED, handleEvent);
+      wsService.unsubscribe(WS_EVENTS.HANDOFF_COMPLETED, handleEvent);
+    };
+  }, [emergencyId, fetchData]);
 
   const handleFetchRecommendations = async () => {
     if (!emergencyId) return;
@@ -80,14 +128,42 @@ export const EmergencyDetailPage: React.FC = () => {
         `Hospital #${hospitalId}`;
 
       addToast('success', 'Confirmation Request Sent', `Confirmation request sent to ${hospitalName}. Status set to PENDING.`);
-      
-      // Refresh emergency details to update status
       fetchData();
     } catch (err) {
       const parsed = parseApiError(err);
       addToast('error', 'Request Failed', parsed.message);
     } finally {
       setSubmittingHospitalId(null);
+    }
+  };
+
+  const handleAssignAmbulance = async () => {
+    if (!emergencyId || !selectedAmbulanceId) return;
+    setAssigningAmbulance(true);
+    try {
+      await assignAmbulance(emergencyId, selectedAmbulanceId);
+      addToast('success', 'Ambulance Assigned', `Ambulance assigned successfully! Status updated to EN ROUTE.`);
+      setSelectedAmbulanceId(null);
+      fetchData();
+    } catch (err) {
+      const parsed = parseApiError(err);
+      addToast('error', 'Ambulance Assignment Failed', parsed.message);
+    } finally {
+      setAssigningAmbulance(false);
+    }
+  };
+
+  const handleMarkArrived = async (ambulanceId: number) => {
+    setUpdatingAmbulanceStatus(true);
+    try {
+      await updateAmbulanceStatus(ambulanceId, 'ARRIVED');
+      addToast('info', 'Ambulance Arrived', 'Ambulance marked as ARRIVED at hospital.');
+      fetchData();
+    } catch (err) {
+      const parsed = parseApiError(err);
+      addToast('error', 'Status Update Failed', parsed.message);
+    } finally {
+      setUpdatingAmbulanceStatus(false);
     }
   };
 
@@ -105,6 +181,12 @@ export const EmergencyDetailPage: React.FC = () => {
       </div>
     );
   }
+
+  const acceptedRequest = requests.find((r) => r.status === 'ACCEPTED');
+  const availableAmbulances = ambulances.filter((a) => a.status === 'AVAILABLE');
+  const assignedAmbulance = emergency.assigned_ambulance_id
+    ? ambulances.find((a) => a.id === emergency.assigned_ambulance_id)
+    : null;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-16">
@@ -155,6 +237,102 @@ export const EmergencyDetailPage: React.FC = () => {
       </div>
 
       {error && <ErrorAlert message={error} />}
+
+      {/* Visual Timeline Section */}
+      <EmergencyTimeline status={emergency.status} handoffStatus={handoff?.status} />
+
+      {/* Ambulance Dispatch & Handoff Management Card */}
+      {(acceptedRequest || ['HOSPITAL_SELECTED', 'EN_ROUTE', 'ARRIVED', 'HANDOFF_COMPLETED'].includes(emergency.status)) && (
+        <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl backdrop-blur-md space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+              <Truck className="w-5 h-5 text-amber-400" /> Ambulance Dispatch & Transit Controller
+            </h3>
+            <span className="text-xs text-emerald-400 font-mono flex items-center gap-1 font-semibold">
+              <CheckCircle className="w-3.5 h-3.5" /> Hospital Reserved
+            </span>
+          </div>
+
+          {!assignedAmbulance ? (
+            /* Assign Ambulance Form */
+            <div className="space-y-3">
+              <p className="text-xs text-slate-300">
+                Hospital confirmation received. Select an available ambulance unit to assign to this emergency incident.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <select
+                  value={selectedAmbulanceId || ''}
+                  onChange={(e) => setSelectedAmbulanceId(Number(e.target.value))}
+                  className="flex-1 bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl p-3 focus:outline-none focus:border-rose-500 font-mono"
+                >
+                  <option value="">-- Select Available Ambulance Unit --</option>
+                  {availableAmbulances.map((amb) => (
+                    <option key={amb.id} value={amb.id}>
+                      {amb.vehicle_number} (AVAILABLE)
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={handleAssignAmbulance}
+                  disabled={!selectedAmbulanceId || assigningAmbulance}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-rose-600/20"
+                >
+                  {assigningAmbulance ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Assigning...
+                    </>
+                  ) : (
+                    <>
+                      <Navigation className="w-4 h-4" /> ASSIGN AMBULANCE
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Active Ambulance Card */
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-mono font-bold text-sm text-slate-100">
+                  <Truck className="w-4 h-4 text-amber-400" /> AMBULANCE {assignedAmbulance.vehicle_number}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400">Unit Status:</span>
+                  <span
+                    className={`font-bold px-2 py-0.5 rounded text-[10px] ${
+                      assignedAmbulance.status === 'EN_ROUTE'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                        : assignedAmbulance.status === 'ARRIVED'
+                        ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    }`}
+                  >
+                    ● {assignedAmbulance.status}
+                  </span>
+                </div>
+              </div>
+
+              {assignedAmbulance.status === 'EN_ROUTE' && (
+                <button
+                  onClick={() => handleMarkArrived(assignedAmbulance.id)}
+                  disabled={updatingAmbulanceStatus}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs text-white bg-amber-600 hover:bg-amber-500 shadow-md shadow-amber-600/20 cursor-pointer transition-all"
+                >
+                  {updatingAmbulanceStatus ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" /> [ MARK ARRIVED ]
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Incident Summary Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -43,6 +43,7 @@ class EmergencyCaseResponse(EmergencyCaseBase):
     id: int
     case_number: str
     status: EmergencyStatus
+    assigned_ambulance_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     requirements: List[EmergencyRequirementResponse] = []

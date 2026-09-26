@@ -30,6 +30,7 @@ export interface EmergencyCase {
   pickup_latitude: number;
   pickup_longitude: number;
   status: EmergencyStatus;
+  assigned_ambulance_id?: number;
   created_at: string;
   updated_at: string;
   requirements: EmergencyRequirement[];

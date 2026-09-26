@@ -44,6 +44,13 @@ class EmergencyCase(Base):
         index=True
     )
 
+    assigned_ambulance_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("ambulances.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -62,6 +69,10 @@ class EmergencyCase(Base):
         back_populates="emergency_case",
         cascade="all, delete-orphan",
         lazy="selectin"
+    )
+    assigned_ambulance: Mapped[Optional["Ambulance"]] = relationship(
+        "Ambulance",
+        lazy="joined"
     )
 
     __table_args__ = (
