@@ -5,8 +5,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "MediRoute API"
-    ENVIRONMENT: str = "development"
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "*"
+    ]
 
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
@@ -14,6 +21,8 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "postgres_password"
     POSTGRES_DB: str = "mediroute"
     DATABASE_URL: Union[str, None] = None
+    GEMINI_API_KEY: Union[str, None] = None
+
 
     @property
     def sync_database_url(self) -> str:

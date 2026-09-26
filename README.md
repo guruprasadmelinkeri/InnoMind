@@ -152,7 +152,25 @@ npm run dev
 
 ---
 
-## 7. Phase 8 Ambulance & Handoff API Reference
+## 7. Gemini AI Emergency Analyzer Integration
+
+### Overview & Architectural Role
+- **Unstructured to Structured Conversion**: Dispatchers can enter natural-language emergency descriptions (e.g., *"62 year old male involved in a highway accident. Severe bleeding, difficulty breathing and suspected chest trauma."*).
+- **Gemini Extraction**: Google Gemini API analyzes the text and extracts structured patient age, severity, clinical summary, required resources (ICU beds, ventilators, trauma beds, etc.), and clinical reasoning.
+- **Deterministic Allocation Boundary**: Gemini **ONLY** converts unstructured notes into structured requirements. Gemini does **NOT** select or rank hospitals. The existing mathematical ranking engine remains strictly responsible for hospital selection based on real-time availability, distance, and freshness.
+
+### Setup & Environment
+```bash
+# Add your Gemini API key in backend/.env
+GEMINI_API_KEY=your_google_gemini_api_key_here
+```
+
+### Endpoint Reference
+- **`POST /api/ai/analyze-emergency`**: Accepts `{"description": "..."}` and returns structured JSON with `severity`, `patient_age`, `summary`, `required_resources`, and `reasoning`.
+
+---
+
+## 8. Phase 8 Ambulance & Handoff API Reference
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -166,9 +184,9 @@ npm run dev
 
 ---
 
-## 8. Automated Test Suites
+## 9. Automated Test Suites
 
-Run backend automated unit, integration, and WebSocket test suites (37 test cases):
+Run backend automated unit, integration, WebSocket, and Gemini analyzer test suites (42 test cases):
 ```bash
 cd backend
 pytest tests/
@@ -182,7 +200,7 @@ npm run build
 
 ---
 
-## 9. Current Implementation Status
+## 10. Current Implementation Status
 - **Phase 1 Complete**: Project foundation, FastAPI backend, React Vite frontend, Tailwind styling, `/health` endpoint.
 - **Phase 2 Complete**: SQLAlchemy models for `Hospital` & `HospitalResource`, Alembic setup, hospital CRUD APIs.
 - **Phase 3 Complete**: `EmergencyCase` & `EmergencyRequirement` models, validation, emergency CRUD APIs.
@@ -191,3 +209,5 @@ npm run build
 - **Phase 6 Complete**: Frontend Dashboards (Dispatcher Command Center, Create Incident, Recommendation View, Hospital Capacity Portal, Allocation Requests, Toast notifications, 409 Conflict Modals).
 - **Phase 7 Complete**: Real-Time Updates using WebSockets (`ws://localhost:8000/ws`), `COMMIT -> BROADCAST` event manager, auto-reconnecting frontend socket service, live navigation connection status indicator, and multi-browser dynamic updates without page reloads.
 - **Phase 8 Complete**: Ambulance & End-to-End Handoff Workflow (`Ambulance` & `Handoff` models, ambulance assignment, journey status simulation, hospital triage arrival alerts, `START HANDOFF` / `COMPLETE HANDOFF` form, automatic ambulance release to `AVAILABLE`, visual live status timeline, 12 new unit tests, and 6 new WebSocket event broadcasts).
+- **Phase 9 Complete**: Gemini AI Emergency Analyzer (`POST /api/ai/analyze-emergency`, `google-genai` SDK integration, strict severity/resource validation, `[ USE DEMO EMERGENCY ]` quick fill, `[ ANALYZE WITH GEMINI ]` NLP extraction, `[ USE ANALYSIS ]` form auto-population, and 5 unit tests with API mocking).
+

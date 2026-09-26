@@ -6,10 +6,20 @@ from decimal import Decimal
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from app.db.database import SessionLocal, engine, Base
-from app.models.hospital import Hospital
-from app.models.resource import HospitalResource, ResourceType
-from app.models.emergency import EmergencyCase, EmergencyRequirement, EmergencySeverity, EmergencyStatus
-from app.models.ambulance import Ambulance, AmbulanceStatus
+from app.models import (
+    Hospital,
+    HospitalResource,
+    ResourceType,
+    EmergencyCase,
+    EmergencyRequirement,
+    EmergencySeverity,
+    EmergencyStatus,
+    Ambulance,
+    AmbulanceStatus,
+    AllocationRequest,
+    Reservation,
+    Handoff,
+)
 
 SAMPLE_AMBULANCES = [
     {"vehicle_number": "MH12AB1234", "status": AmbulanceStatus.AVAILABLE, "current_latitude": 37.7749, "current_longitude": -122.4194},
@@ -82,7 +92,8 @@ SAMPLE_EMERGENCIES = [
 ]
 
 def seed_database():
-    print("Seeding sample hospital, emergency, and ambulance database...")
+    print("Resetting and seeding sample hospital, emergency, and ambulance database...")
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
