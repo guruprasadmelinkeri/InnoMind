@@ -1,11 +1,13 @@
 from typing import List
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.schemas.hospital import HospitalCreate, HospitalResponse
+from app.schemas.hospital import HospitalCreate, HospitalUpdate, HospitalResponse
 from app.schemas.resource import ResourceCreate, ResourceResponse
 from app.services import hospital_service
+from app.websocket import WebSocketEvents, broadcast_event_sync
 
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 
@@ -29,6 +31,46 @@ def get_hospital(hospital_id: int, db: Session = Depends(get_db)):
 def create_hospital(hospital_in: HospitalCreate, db: Session = Depends(get_db)):
     """Create a new hospital record."""
     return hospital_service.create_hospital(db, hospital_in)
+
+@router.patch("/{hospital_id}", response_model=HospitalResponse, summary="Update hospital details")
+def update_hospital(hospital_id: int, hospital_in: HospitalUpdate, db: Session = Depends(get_db)):
+    """Update details of a specific hospital."""
+    hospital = hospital_service.get_hospital_by_id(db, hospital_id)
+    if not hospital:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Hospital with id {hospital_id} not found"
+        )
+    update_data = hospital_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(hospital, field, value)
+    db.commit()
+    db.refresh(hospital)
+
+    broadcast_event_sync(
+        WebSocketEvents.HOSPITAL_STATUS_UPDATED,
+        {
+            "hospital_id": hospital.id,
+            "name": hospital.name,
+            "status": hospital.status
+        }
+    )
+    return hospital
+
+@router.post("/{hospital_id}/make-stale", summary="Simulate stale hospital data")
+def make_hospital_stale(hospital_id: int, db: Session = Depends(get_db)):
+    """Set last_updated timestamp for hospital resources to 15 minutes ago."""
+    hospital = hospital_service.get_hospital_by_id(db, hospital_id)
+    if not hospital:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Hospital with id {hospital_id} not found"
+        )
+    stale_time = datetime.now(timezone.utc) - timedelta(minutes=15)
+    for res in hospital.resources:
+        res.last_updated = stale_time
+    db.commit()
+    return {"message": f"Hospital {hospital_id} resources set to stale (15m ago)"}
 
 @router.get("/{hospital_id}/resources", response_model=List[ResourceResponse], summary="Get hospital resources")
 def get_hospital_resources(hospital_id: int, db: Session = Depends(get_db)):

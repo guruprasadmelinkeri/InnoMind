@@ -1,11 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ShieldAlert, MapPin, Award, Compass, Loader2, Truck, CheckCircle, Navigation } from 'lucide-react';
+import {
+  ArrowLeft,
+  ShieldAlert,
+  MapPin,
+  Award,
+  Compass,
+  Loader2,
+  Truck,
+  CheckCircle,
+  Navigation,
+} from 'lucide-react';
 import { getEmergencyById } from '../../services/emergencyApi';
 import { getRecommendations, createAllocationRequest, getEmergencyRequests } from '../../services/allocationApi';
 import { getAmbulances, assignAmbulance, updateAmbulanceStatus } from '../../services/ambulanceApi';
+import { getHospitals } from '../../services/hospitalApi';
 import { getHandoff } from '../../services/handoffApi';
 import type { EmergencyCase } from '../../types/emergency';
+import type { Hospital } from '../../types/hospital';
 import type { RecommendationResponse } from '../../types/allocation';
 import type { AllocationRequest } from '../../types/reservation';
 import type { Ambulance } from '../../types/ambulance';
@@ -20,6 +32,8 @@ import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { useToast } from '../../components/common/Toast';
 import { parseApiError } from '../../services/api';
 import { wsService, WS_EVENTS } from '../../services/websocket';
+import { PuneMap } from '../../components/map/PuneMap';
+import type { EmergencyPoint } from '../../components/map/PuneMap';
 
 export const EmergencyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -27,11 +41,13 @@ export const EmergencyDetailPage: React.FC = () => {
   const { addToast } = useToast();
 
   const [emergency, setEmergency] = useState<EmergencyCase | null>(null);
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
   const [requests, setRequests] = useState<AllocationRequest[]>([]);
   const [ambulances, setAmbulances] = useState<Ambulance[]>([]);
   const [handoff, setHandoff] = useState<Handoff | null>(null);
 
+  const [selectedHospitalId, setSelectedHospitalId] = useState<number | null>(null);
   const [selectedAmbulanceId, setSelectedAmbulanceId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
@@ -43,19 +59,27 @@ export const EmergencyDetailPage: React.FC = () => {
   const fetchData = useCallback(async () => {
     if (!emergencyId || isNaN(emergencyId)) return;
     try {
-      const [eData, reqsData, ambData] = await Promise.all([
+      const [eData, reqsData, ambData, hData] = await Promise.all([
         getEmergencyById(emergencyId),
         getEmergencyRequests(emergencyId),
         getAmbulances(),
+        getHospitals(),
       ]);
       setEmergency(eData);
       setRequests(reqsData);
       setAmbulances(ambData);
+      setHospitals(hData);
+
+      // Check if accepted request exists, default selected hospital
+      const accepted = reqsData.find((r) => r.status === 'ACCEPTED');
+      if (accepted) {
+        setSelectedHospitalId(accepted.hospital_id);
+      }
 
       if (['ARRIVED', 'HANDOFF_COMPLETED'].includes(eData.status)) {
         try {
-          const hData = await getHandoff(emergencyId);
-          setHandoff(hData);
+          const hDataHandoff = await getHandoff(emergencyId);
+          setHandoff(hDataHandoff);
         } catch {
           setHandoff(null);
         }
@@ -75,8 +99,7 @@ export const EmergencyDetailPage: React.FC = () => {
   useEffect(() => {
     if (!emergencyId) return;
 
-    const handleEvent = (payload: any) => {
-      console.log('EmergencyDetailPage WS Payload:', payload);
+    const handleEvent = () => {
       fetchData();
     };
 
@@ -106,7 +129,14 @@ export const EmergencyDetailPage: React.FC = () => {
     try {
       const recData = await getRecommendations(emergencyId);
       setRecommendations(recData);
-      addToast('info', 'Allocation Engine Executed', 'Calculated hospital rankings based on resource match, travel time, and data freshness.');
+      if (recData.recommendations.length > 0 && !selectedHospitalId) {
+        setSelectedHospitalId(recData.recommendations[0].hospital_id);
+      }
+      addToast(
+        'info',
+        'Allocation Engine Executed',
+        'Calculated hospital rankings for Pune hospitals based on resource match, travel time, and data freshness.'
+      );
     } catch (err) {
       const parsed = parseApiError(err);
       setError(parsed.message);
@@ -122,12 +152,17 @@ export const EmergencyDetailPage: React.FC = () => {
     try {
       const createdReq = await createAllocationRequest(emergencyId, hospitalId);
       setRequests((prev) => [...prev, createdReq]);
+      setSelectedHospitalId(hospitalId);
 
       const hospitalName =
         recommendations?.recommendations.find((r) => r.hospital_id === hospitalId)?.hospital_name ||
         `Hospital #${hospitalId}`;
 
-      addToast('success', 'Confirmation Request Sent', `Confirmation request sent to ${hospitalName}. Status set to PENDING.`);
+      addToast(
+        'success',
+        'Confirmation Request Sent',
+        `Confirmation request sent to ${hospitalName}. Status set to PENDING.`
+      );
       fetchData();
     } catch (err) {
       const parsed = parseApiError(err);
@@ -175,7 +210,7 @@ export const EmergencyDetailPage: React.FC = () => {
     return (
       <div className="space-y-4 max-w-xl mx-auto py-12">
         <ErrorAlert message={error || 'Emergency case not found.'} />
-        <Link to="/dispatcher" className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-400">
+        <Link to="/dispatcher" className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700">
           <ArrowLeft className="w-4 h-4" /> Return to Command Center
         </Link>
       </div>
@@ -188,32 +223,39 @@ export const EmergencyDetailPage: React.FC = () => {
     ? ambulances.find((a) => a.id === emergency.assigned_ambulance_id)
     : null;
 
+  const emergencyPoint: EmergencyPoint = {
+    latitude: Number(emergency.pickup_latitude) || 18.5204,
+    longitude: Number(emergency.pickup_longitude) || 73.841,
+    label: `Incident ${emergency.case_number} (${emergency.severity})`,
+    caseNumber: emergency.case_number,
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-16">
+    <div className="max-w-6xl mx-auto space-y-6 pb-16">
       {/* Navigation & Header */}
       <div>
         <Link
           to="/dispatcher"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors mb-3"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors mb-2"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Dispatcher Command Center
         </Link>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-rose-500/10 text-rose-400 rounded-2xl border border-rose-500/20">
+            <div className="p-2.5 bg-red-50 text-red-600 rounded-xl border border-red-200">
               <ShieldAlert className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black text-white font-mono tracking-tight">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-bold text-slate-800 font-mono tracking-tight">
                   {emergency.case_number}
                 </h1>
                 <SeverityBadge severity={emergency.severity} />
                 <StatusBadge status={emergency.status} />
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Registered on {new Date(emergency.created_at).toLocaleString()}
+              <p className="text-xs text-slate-500 mt-0.5">
+                Registered on {new Date(emergency.created_at).toLocaleString()} · Pune Operations
               </p>
             </div>
           </div>
@@ -221,7 +263,7 @@ export const EmergencyDetailPage: React.FC = () => {
           <button
             onClick={handleFetchRecommendations}
             disabled={recommendationsLoading}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 shadow-xl shadow-rose-600/20 disabled:opacity-50 transition-all cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
           >
             {recommendationsLoading ? (
               <>
@@ -241,35 +283,35 @@ export const EmergencyDetailPage: React.FC = () => {
       {/* Visual Timeline Section */}
       <EmergencyTimeline status={emergency.status} handoffStatus={handoff?.status} />
 
-      {/* Ambulance Dispatch & Handoff Management Card */}
-      {(acceptedRequest || ['HOSPITAL_SELECTED', 'EN_ROUTE', 'ARRIVED', 'HANDOFF_COMPLETED'].includes(emergency.status)) && (
-        <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl backdrop-blur-md space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
-              <Truck className="w-5 h-5 text-amber-400" /> Ambulance Dispatch & Transit Controller
+      {/* Ambulance Dispatch & Transit Controller */}
+      {(acceptedRequest ||
+        ['HOSPITAL_SELECTED', 'EN_ROUTE', 'ARRIVED', 'HANDOFF_COMPLETED'].includes(emergency.status)) && (
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <Truck className="w-4 h-4 text-amber-500" /> Ambulance Dispatch & Transit Controller
             </h3>
-            <span className="text-xs text-emerald-400 font-mono flex items-center gap-1 font-semibold">
+            <span className="text-xs text-emerald-700 font-medium flex items-center gap-1 font-semibold">
               <CheckCircle className="w-3.5 h-3.5" /> Hospital Reserved
             </span>
           </div>
 
           {!assignedAmbulance ? (
-            /* Assign Ambulance Form */
             <div className="space-y-3">
-              <p className="text-xs text-slate-300">
-                Hospital confirmation received. Select an available ambulance unit to assign to this emergency incident.
+              <p className="text-xs text-slate-600">
+                Hospital confirmation received. Select an available Pune ambulance unit to assign to this incident.
               </p>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <select
                   value={selectedAmbulanceId || ''}
                   onChange={(e) => setSelectedAmbulanceId(Number(e.target.value))}
-                  className="flex-1 bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl p-3 focus:outline-none focus:border-rose-500 font-mono"
+                  className="flex-1 bg-white border border-slate-200 text-slate-800 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
                 >
                   <option value="">-- Select Available Ambulance Unit --</option>
                   {availableAmbulances.map((amb) => (
                     <option key={amb.id} value={amb.id}>
-                      {amb.vehicle_number} (AVAILABLE)
+                      {amb.vehicle_number} (AVAILABLE - Pune)
                     </option>
                   ))}
                 </select>
@@ -277,7 +319,7 @@ export const EmergencyDetailPage: React.FC = () => {
                 <button
                   onClick={handleAssignAmbulance}
                   disabled={!selectedAmbulanceId || assigningAmbulance}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-rose-600/20"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 transition-all cursor-pointer shadow-sm"
                 >
                   {assigningAmbulance ? (
                     <>
@@ -292,21 +334,20 @@ export const EmergencyDetailPage: React.FC = () => {
               </div>
             </div>
           ) : (
-            /* Active Ambulance Card */
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
               <div className="space-y-1">
-                <div className="flex items-center gap-2 font-mono font-bold text-sm text-slate-100">
-                  <Truck className="w-4 h-4 text-amber-400" /> AMBULANCE {assignedAmbulance.vehicle_number}
+                <div className="flex items-center gap-2 font-mono font-bold text-sm text-slate-800">
+                  <Truck className="w-4 h-4 text-amber-500" /> AMBULANCE {assignedAmbulance.vehicle_number}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-400">Unit Status:</span>
+                  <span className="text-slate-500">Unit Status:</span>
                   <span
                     className={`font-bold px-2 py-0.5 rounded text-[10px] ${
                       assignedAmbulance.status === 'EN_ROUTE'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                        ? 'bg-amber-100 text-amber-800'
                         : assignedAmbulance.status === 'ARRIVED'
-                        ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-emerald-100 text-emerald-800'
                     }`}
                   >
                     ● {assignedAmbulance.status}
@@ -318,13 +359,13 @@ export const EmergencyDetailPage: React.FC = () => {
                 <button
                   onClick={() => handleMarkArrived(assignedAmbulance.id)}
                   disabled={updatingAmbulanceStatus}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs text-white bg-amber-600 hover:bg-amber-500 shadow-md shadow-amber-600/20 cursor-pointer transition-all"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs text-white bg-amber-600 hover:bg-amber-700 shadow-sm cursor-pointer transition-all"
                 >
                   {updatingAmbulanceStatus ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <CheckCircle className="w-4 h-4" /> [ MARK ARRIVED ]
+                      <CheckCircle className="w-4 h-4" /> [ MARK ARRIVED AT HOSPITAL ]
                     </>
                   )}
                 </button>
@@ -336,23 +377,23 @@ export const EmergencyDetailPage: React.FC = () => {
 
       {/* Incident Summary Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 p-6 rounded-3xl bg-slate-900/60 border border-slate-800 space-y-4 shadow-xl backdrop-blur-md">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400 border-b border-slate-800/80 pb-2">
+        <div className="lg:col-span-2 p-5 rounded-2xl bg-white border border-slate-200 space-y-4 shadow-sm">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100 pb-2">
             Emergency Incident Details
           </h3>
 
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-semibold">Patient Age</span>
-              <span className="font-bold text-slate-200 text-sm">
+              <span className="font-bold text-slate-800 text-sm">
                 {emergency.patient_age ? `${emergency.patient_age} Years` : 'Not Specified'}
               </span>
             </div>
 
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-semibold">Pickup Coordinates</span>
-              <span className="font-mono text-slate-200 text-sm flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-rose-400" />
+              <span className="font-mono text-slate-800 text-sm flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-red-500" />
                 {emergency.pickup_latitude}, {emergency.pickup_longitude}
               </span>
             </div>
@@ -360,29 +401,29 @@ export const EmergencyDetailPage: React.FC = () => {
 
           <div>
             <span className="text-slate-400 block text-[10px] uppercase font-semibold">Incident Description</span>
-            <p className="text-xs text-slate-300 mt-1 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <p className="text-xs text-slate-700 mt-1 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
               {emergency.description || 'No additional description provided.'}
             </p>
           </div>
         </div>
 
         {/* Required Resources List */}
-        <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 space-y-4 shadow-xl backdrop-blur-md">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400 border-b border-slate-800/80 pb-2">
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-4 shadow-sm">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100 pb-2">
             Required Resources ({emergency.requirements.length})
           </h3>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {emergency.requirements.map((req) => (
               <div
                 key={req.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs"
+                className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs"
               >
-                <div className="font-semibold text-slate-200">{req.resource_type}</div>
+                <div className="font-semibold text-slate-800">{req.resource_type}</div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-emerald-400">×{req.quantity}</span>
+                  <span className="font-mono font-bold text-teal-700">×{req.quantity}</span>
                   {req.required && (
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-700 border border-red-200">
                       MANDATORY
                     </span>
                   )}
@@ -393,38 +434,67 @@ export const EmergencyDetailPage: React.FC = () => {
         </div>
       </div>
 
+      {/* REAL PUNE MAP INTEGRATION */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Compass className="w-5 h-5 text-teal-600" />
+            <h2 className="text-base font-bold text-slate-800">
+              Real Pune Geographic Dispatch & Route Map
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400">
+            Selected destination:{' '}
+            <strong className="text-slate-700">
+              {hospitals.find((h) => h.id === selectedHospitalId)?.name || 'None selected'}
+            </strong>
+          </span>
+        </div>
+
+        <PuneMap
+          hospitals={hospitals}
+          emergencyPoint={emergencyPoint}
+          ambulances={ambulances}
+          selectedHospitalId={selectedHospitalId}
+          onSelectHospital={(hId) => setSelectedHospitalId(hId)}
+          recommendations={recommendations?.recommendations || []}
+          height="460px"
+        />
+      </div>
+
       {/* Hospital Recommendations Section */}
       {recommendations && (
-        <div className="space-y-6 pt-4">
+        <div className="space-y-6 pt-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <Award className="w-6 h-6 text-amber-400" /> Ranked Hospital Recommendations
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Award className="w-5 h-5 text-amber-500" /> Ranked Hospital Recommendations
             </h2>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-500">
               Eligible: {recommendations.recommendations.length} | Ineligible: {recommendations.ineligible_hospitals.length}
             </span>
           </div>
 
           {recommendations.recommendations.length === 0 ? (
-            <div className="p-6 rounded-2xl bg-amber-950/20 border border-amber-500/30 text-amber-200 text-xs">
-              ⚠️ No active hospitals currently meet all mandatory resource requirements for this emergency case.
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+              ⚠️ No active Pune hospitals currently meet all mandatory resource requirements for this case.
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {recommendations.recommendations.map((rec, idx) => {
                 const isPending = requests.some(
                   (req) => req.hospital_id === rec.hospital_id && req.status === 'PENDING'
                 );
 
                 return (
-                  <RecommendationCard
-                    key={rec.hospital_id}
-                    rank={idx + 1}
-                    recommendation={rec}
-                    isPending={isPending}
-                    isSubmitting={submittingHospitalId === rec.hospital_id}
-                    onRequestConfirmation={handleRequestConfirmation}
-                  />
+                  <div key={rec.hospital_id} onClick={() => setSelectedHospitalId(rec.hospital_id)}>
+                    <RecommendationCard
+                      rank={idx + 1}
+                      recommendation={rec}
+                      isPending={isPending}
+                      isSubmitting={submittingHospitalId === rec.hospital_id}
+                      onRequestConfirmation={handleRequestConfirmation}
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -432,8 +502,8 @@ export const EmergencyDetailPage: React.FC = () => {
 
           {/* Ineligible Hospitals Section */}
           {recommendations.ineligible_hospitals.length > 0 && (
-            <div className="space-y-3 pt-6 border-t border-slate-800">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
+            <div className="space-y-3 pt-4 border-t border-slate-200">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
                 Incompatible Hospitals ({recommendations.ineligible_hospitals.length})
               </h3>
 
