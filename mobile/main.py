@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from voice import router as voice_router
+from InnoMind.backend.app.services.voice import router as voice_router
 
 app = FastAPI()
 

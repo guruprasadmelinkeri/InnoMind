@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api import api_router
-
+from app.services import voice
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="MediRoute Real-Time Emergency Resource Allocator API",
@@ -17,12 +17,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket import manager
 
 # Include API Router
 app.include_router(api_router)
+app.include_router(voice.router, prefix="/voice")
 
 @app.websocket("/ws")
 @app.websocket("/api/ws")
@@ -38,4 +38,3 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "mediroute-api"}
-
