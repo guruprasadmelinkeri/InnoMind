@@ -4,6 +4,7 @@ import { Navbar } from './components/layout/Navbar';
 import { DispatcherDashboard } from './pages/dispatcher/DispatcherDashboard';
 import { CreateEmergencyPage } from './pages/dispatcher/CreateEmergencyPage';
 import { EmergencyDetailPage } from './pages/dispatcher/EmergencyDetailPage';
+import { UserDashboard } from './pages/user/UserDashboard';
 import { HospitalDashboard } from './pages/hospital/HospitalDashboard';
 import { HospitalRequestsPage } from './pages/hospital/HospitalRequestsPage';
 import { getHospitals } from './services/hospitalApi';
@@ -42,6 +43,7 @@ export const App: React.FC = () => {
           <Route path="/dispatcher" element={<DispatcherDashboard />} />
           <Route path="/dispatcher/emergency/new" element={<CreateEmergencyPage />} />
           <Route path="/dispatcher/emergency/:id" element={<EmergencyDetailPage />} />
+          <Route path="/user" element={<UserDashboard />} />
           <Route path="/hospital/:hospitalId" element={<HospitalDashboard />} />
           <Route path="/hospital/:hospitalId/requests" element={<HospitalRequestsPage />} />
           <Route path="*" element={<Navigate to="/dispatcher" replace />} />

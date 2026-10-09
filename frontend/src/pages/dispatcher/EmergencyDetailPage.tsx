@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -16,6 +16,8 @@ import { getRecommendations, createAllocationRequest, getEmergencyRequests } fro
 import { getAmbulances, assignAmbulance, updateAmbulanceStatus } from '../../services/ambulanceApi';
 import { getHospitals } from '../../services/hospitalApi';
 import { getHandoff } from '../../services/handoffApi';
+import { AmbulanceSimulationEngine, type AmbulanceSimulationSnapshot } from '../../services/ambulanceSimulation';
+import { calculateHaversineDistanceKm, type RouteResult } from '../../services/routingService';
 import type { EmergencyCase } from '../../types/emergency';
 import type { Hospital } from '../../types/hospital';
 import type { RecommendationResponse } from '../../types/allocation';
@@ -49,6 +51,9 @@ export const EmergencyDetailPage: React.FC = () => {
 
   const [selectedHospitalId, setSelectedHospitalId] = useState<number | null>(null);
   const [selectedAmbulanceId, setSelectedAmbulanceId] = useState<number | null>(null);
+  const [routeInfo, setRouteInfo] = useState<RouteResult | null>(null);
+  const [simulationSnapshot, setSimulationSnapshot] = useState<AmbulanceSimulationSnapshot | null>(null);
+  const simulationEngineRef = useRef<AmbulanceSimulationEngine | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [submittingHospitalId, setSubmittingHospitalId] = useState<number | null>(null);
@@ -202,6 +207,90 @@ export const EmergencyDetailPage: React.FC = () => {
     }
   };
 
+  const formatDuration = (totalSeconds: number) => {
+    const safeSeconds = Math.max(0, Math.round(totalSeconds));
+    const minutes = Math.floor(safeSeconds / 60);
+    const seconds = safeSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const assignedAmbulance = emergency?.assigned_ambulance_id
+    ? ambulances.find((a) => a.id === emergency.assigned_ambulance_id)
+    : null;
+  const selectedHospital = hospitals.find((h) => h.id === selectedHospitalId) ?? null;
+
+  useEffect(() => {
+    if (!assignedAmbulance || !selectedHospital || !emergency) {
+      setSimulationSnapshot(null);
+      simulationEngineRef.current = null;
+      return;
+    }
+
+    const routeCoordinates: [number, number][] =
+      routeInfo && routeInfo.coordinates.length > 1
+        ? routeInfo.coordinates.map(([lat, lon]) => [Number(lat), Number(lon)] as [number, number])
+        : [
+            [Number(emergency.pickup_latitude), Number(emergency.pickup_longitude)] as [number, number],
+            [Number(selectedHospital.latitude), Number(selectedHospital.longitude)] as [number, number],
+          ];
+
+    const engine = new AmbulanceSimulationEngine({
+      ambulanceId: assignedAmbulance.id,
+      origin: [Number(emergency.pickup_latitude), Number(emergency.pickup_longitude)] as [number, number],
+      destination: [Number(selectedHospital.latitude), Number(selectedHospital.longitude)] as [number, number],
+      route: routeCoordinates,
+      totalDistanceKm:
+        routeInfo?.distanceKm ??
+        calculateHaversineDistanceKm(
+          Number(emergency.pickup_latitude),
+          Number(emergency.pickup_longitude),
+          Number(selectedHospital.latitude),
+          Number(selectedHospital.longitude)
+        ),
+      totalEtaSeconds: Math.max(30, (routeInfo?.durationMinutes ?? 8) * 60),
+      speedMultiplier: 10,
+      updateIntervalMs: 200,
+    });
+
+    simulationEngineRef.current = engine;
+    setSimulationSnapshot(engine.getSnapshot());
+  }, [assignedAmbulance, selectedHospital, emergency, routeInfo]);
+
+  useEffect(() => {
+    const engine = simulationEngineRef.current;
+    if (!engine || !engine.isRunning) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      const current = engine.tick();
+      setSimulationSnapshot(current);
+    }, engine.updateInterval);
+
+    return () => window.clearInterval(intervalId);
+  }, [simulationSnapshot?.isRunning, assignedAmbulance?.id]);
+
+  const handleStartAmbulanceSimulation = () => {
+    const engine = simulationEngineRef.current;
+    if (!engine) return;
+    const updated = engine.start();
+    setSimulationSnapshot(updated);
+  };
+
+  const handlePauseAmbulanceSimulation = () => {
+    const engine = simulationEngineRef.current;
+    if (!engine) return;
+    const updated = engine.pause();
+    setSimulationSnapshot(updated);
+  };
+
+  const handleResetAmbulanceSimulation = () => {
+    const engine = simulationEngineRef.current;
+    if (!engine) return;
+    const updated = engine.reset();
+    setSimulationSnapshot(updated);
+  };
+
   if (loading) {
     return <LoadingSpinner label="Loading Emergency Case Details..." />;
   }
@@ -219,9 +308,11 @@ export const EmergencyDetailPage: React.FC = () => {
 
   const acceptedRequest = requests.find((r) => r.status === 'ACCEPTED');
   const availableAmbulances = ambulances.filter((a) => a.status === 'AVAILABLE');
-  const assignedAmbulance = emergency.assigned_ambulance_id
-    ? ambulances.find((a) => a.id === emergency.assigned_ambulance_id)
-    : null;
+
+  const simulationStatus = simulationSnapshot?.status ?? (assignedAmbulance?.status ?? 'IDLE');
+  const simulationProgress = Math.round((simulationSnapshot?.progress ?? 0) * 100);
+  const simulationEta = simulationSnapshot ? formatDuration(simulationSnapshot.etaSecondsRemaining) : '00:00';
+  const simulationDistance = simulationSnapshot ? `${simulationSnapshot.distanceRemainingKm.toFixed(1)} km` : '0.0 km';
 
   const emergencyPoint: EmergencyPoint = {
     latitude: Number(emergency.pickup_latitude) || 18.5204,
@@ -372,6 +463,73 @@ export const EmergencyDetailPage: React.FC = () => {
               )}
             </div>
           )}
+
+          {assignedAmbulance && selectedHospital && (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Live Ambulance Simulation</p>
+                  <h4 className="mt-1 text-lg font-bold text-slate-800">Ambulance {assignedAmbulance.vehicle_number}</h4>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border bg-teal-50 text-teal-700 border-teal-200">
+                  {simulationStatus}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div className="rounded-xl bg-white border border-slate-200 p-2.5">
+                  <div className="text-slate-400 uppercase tracking-wide text-[10px]">Status</div>
+                  <div className="mt-1 font-bold text-slate-800">{simulationStatus}</div>
+                </div>
+                <div className="rounded-xl bg-white border border-slate-200 p-2.5">
+                  <div className="text-slate-400 uppercase tracking-wide text-[10px]">Destination</div>
+                  <div className="mt-1 font-bold text-slate-800">{selectedHospital.name}</div>
+                </div>
+                <div className="rounded-xl bg-white border border-slate-200 p-2.5">
+                  <div className="text-slate-400 uppercase tracking-wide text-[10px]">ETA</div>
+                  <div className="mt-1 font-bold text-slate-800">{simulationEta}</div>
+                </div>
+                <div className="rounded-xl bg-white border border-slate-200 p-2.5">
+                  <div className="text-slate-400 uppercase tracking-wide text-[10px]">Distance</div>
+                  <div className="mt-1 font-bold text-slate-800">{simulationDistance}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <span>Progress</span>
+                  <span>{simulationProgress}%</span>
+                </div>
+                <div className="h-2.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.max(0, simulationProgress))}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  onClick={handleStartAmbulanceSimulation}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                >
+                  ▶ Start Simulation
+                </button>
+                <button
+                  onClick={handlePauseAmbulanceSimulation}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 transition-colors"
+                >
+                  ⏸ Pause
+                </button>
+                <button
+                  onClick={handleResetAmbulanceSimulation}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-xs text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 transition-colors"
+                >
+                  ↻ Reset
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -455,8 +613,10 @@ export const EmergencyDetailPage: React.FC = () => {
           hospitals={hospitals}
           emergencyPoint={emergencyPoint}
           ambulances={ambulances}
+          ambulanceSimulation={simulationSnapshot}
           selectedHospitalId={selectedHospitalId}
           onSelectHospital={(hId) => setSelectedHospitalId(hId)}
+          onRouteInfoChange={setRouteInfo}
           recommendations={recommendations?.recommendations || []}
           height="460px"
         />

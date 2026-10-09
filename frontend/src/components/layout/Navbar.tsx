@@ -84,13 +84,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Link
             to="/dispatcher"
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
-              !isHospitalRoute
+              !isHospitalRoute && location.pathname !== '/user'
                 ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
             }`}
           >
             <ShieldAlert className="w-4 h-4 text-rose-400" />
             <span className="hidden sm:inline">Dispatcher Command Center</span>
+          </Link>
+
+          <Link
+            to="/user"
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
+              location.pathname === '/user'
+                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <Ambulance className="w-4 h-4 text-emerald-400" />
+            <span className="hidden sm:inline">User Dashboard</span>
           </Link>
 
           {/* Hospital Staff View Selector */}

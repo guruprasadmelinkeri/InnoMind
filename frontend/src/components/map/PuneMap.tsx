@@ -5,6 +5,7 @@ import type { Ambulance } from '../../types/ambulance';
 import type { HospitalRecommendation } from '../../types/allocation';
 import { fetchDrivingRoute } from '../../services/routingService';
 import type { RouteResult } from '../../services/routingService';
+import type { AmbulanceSimulationSnapshot } from '../../services/ambulanceSimulation';
 import {
   MapPin,
   Clock,
@@ -76,8 +77,10 @@ interface PuneMapProps {
   emergencyPoint: EmergencyPoint;
   onEmergencyPointChange?: (point: EmergencyPoint) => void;
   ambulances?: Ambulance[];
+  ambulanceSimulation?: AmbulanceSimulationSnapshot | null;
   selectedHospitalId: number | null;
   onSelectHospital: (hospitalId: number) => void;
+  onRouteInfoChange?: (route: RouteResult | null) => void;
   recommendations?: HospitalRecommendation[];
   height?: string;
 }
@@ -87,8 +90,10 @@ export const PuneMap: React.FC<PuneMapProps> = ({
   emergencyPoint,
   onEmergencyPointChange,
   ambulances = [],
+  ambulanceSimulation = null,
   selectedHospitalId,
   onSelectHospital,
+  onRouteInfoChange,
   recommendations = [],
   height = '520px',
 }) => {
@@ -96,6 +101,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const routeLayerRef = useRef<L.Polyline | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const ambulanceMarkerRef = useRef<Record<number, L.Marker | null>>({});
 
   const [routeInfo, setRouteInfo] = useState<RouteResult | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -154,12 +160,18 @@ export const PuneMap: React.FC<PuneMapProps> = ({
         routeLayerRef.current = null;
       }
       setRouteInfo(null);
+      if (onRouteInfoChange) {
+        onRouteInfoChange(null);
+      }
       return;
     }
 
     const hospital = hospitals.find((h) => h.id === selectedHospitalId);
     if (!hospital || !hospital.latitude || !hospital.longitude) {
       setRouteInfo(null);
+      if (onRouteInfoChange) {
+        onRouteInfoChange(null);
+      }
       return;
     }
 
@@ -174,6 +186,9 @@ export const PuneMap: React.FC<PuneMapProps> = ({
       );
 
       setRouteInfo(result);
+      if (onRouteInfoChange) {
+        onRouteInfoChange(result);
+      }
 
       if (mapInstanceRef.current) {
         // Remove existing route layer
@@ -210,13 +225,14 @@ export const PuneMap: React.FC<PuneMapProps> = ({
     updateRoute();
   }, [updateRoute]);
 
-  // Update Markers (Hospitals, Ambulances, Emergency)
+  // Update static map markers without recreating the live ambulance marker on every tick.
   useEffect(() => {
     const map = mapInstanceRef.current;
     const markerGroup = markersLayerRef.current;
     if (!map || !markerGroup) return;
 
     markerGroup.clearLayers();
+    ambulanceMarkerRef.current = {};
 
     // 1. Emergency Scene Marker
     const emergencyIconHtml = `
@@ -256,49 +272,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
       </div>
     `);
 
-    // 2. Ambulance Markers
-    ambulances.forEach((amb) => {
-      if (!amb.current_latitude || !amb.current_longitude) return;
-
-      const isAvailable = amb.status === 'AVAILABLE';
-      const ambIconHtml = `
-        <div class="relative flex items-center justify-center">
-          <div class="w-8 h-8 rounded-lg ${
-            isAvailable ? 'bg-amber-500' : 'bg-slate-700'
-          } border-2 border-white shadow-md flex items-center justify-center text-white">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            </svg>
-          </div>
-        </div>
-      `;
-
-      const ambIcon = L.divIcon({
-        html: ambIconHtml,
-        className: 'ambulance-marker',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-      });
-
-      const ambMarker = L.marker([amb.current_latitude, amb.current_longitude], {
-        icon: ambIcon,
-        zIndexOffset: 800,
-      }).addTo(markerGroup);
-
-      ambMarker.bindPopup(`
-        <div class="p-2">
-          <div class="flex items-center justify-between gap-2 mb-1">
-            <h4 class="font-bold text-xs text-slate-800">Ambulance ${amb.vehicle_number}</h4>
-            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-              isAvailable ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
-            }">${amb.status}</span>
-          </div>
-          <p class="text-[11px] font-mono text-slate-500">Location: ${amb.current_latitude.toFixed(4)}, ${amb.current_longitude.toFixed(4)}</p>
-        </div>
-      `);
-    });
-
-    // 3. Pune Hospital Markers
+    // 2. Pune Hospital Markers
     hospitals.forEach((hospital) => {
       if (!hospital.latitude || !hospital.longitude) return;
 
@@ -308,11 +282,9 @@ export const PuneMap: React.FC<PuneMapProps> = ({
       const isOffline = hospital.status === 'Offline';
       const isBusy = hospital.status === 'Busy';
 
-      // Check recommendation rank if available
       const rec = recommendations.find((r) => r.hospital_id === hospital.id);
       const isRankOne = rec && recommendations[0]?.hospital_id === hospital.id;
 
-      // Color scheme based on status and selection
       let markerBg = 'bg-teal-600';
       if (isOffline) markerBg = 'bg-slate-400';
       else if (isBusy) markerBg = 'bg-amber-500';
@@ -348,7 +320,6 @@ export const PuneMap: React.FC<PuneMapProps> = ({
         zIndexOffset: isSelected ? 900 : 700,
       }).addTo(markerGroup);
 
-      // Create rich healthcare popup content
       const icu = hospital.resources?.find((r) => r.resource_type === 'ICU_BED');
       const gen = hospital.resources?.find((r) => r.resource_type === 'GENERAL_BED');
       const vent = hospital.resources?.find((r) => r.resource_type === 'VENTILATOR');
@@ -371,14 +342,12 @@ export const PuneMap: React.FC<PuneMapProps> = ({
             <p class="text-[11px] text-slate-500 mt-1">${hospital.address || 'Pune, Maharashtra'}</p>
           </div>
 
-          <!-- Simulated Live Availability Banner -->
           <div class="bg-teal-50 border border-teal-200 rounded-lg p-2 text-center">
             <span class="text-[10px] font-bold tracking-wide uppercase text-teal-800 block">
               Simulated Live Availability
             </span>
           </div>
 
-          <!-- Resource Breakdown Grid -->
           <div class="grid grid-cols-3 gap-1.5 text-center text-xs">
             <div class="bg-slate-50 p-1.5 rounded border border-slate-100">
               <span class="text-[10px] text-slate-400 block font-medium">ICU</span>
@@ -444,7 +413,79 @@ export const PuneMap: React.FC<PuneMapProps> = ({
         }
       });
     });
-  }, [hospitals, ambulances, emergencyPoint, selectedHospitalId, recommendations, onSelectHospital]);
+  }, [hospitals, emergencyPoint, selectedHospitalId, recommendations, onSelectHospital]);
+
+  useEffect(() => {
+    const markerGroup = markersLayerRef.current;
+    if (!markerGroup) return;
+
+    ambulances.forEach((amb) => {
+      const liveSimulation = ambulanceSimulation && ambulanceSimulation.ambulanceId === amb.id ? ambulanceSimulation : null;
+      const currentLat = liveSimulation?.currentLatitude ?? amb.current_latitude;
+      const currentLon = liveSimulation?.currentLongitude ?? amb.current_longitude;
+
+      if (!currentLat || !currentLon) return;
+
+      const markerStatus = liveSimulation?.status ?? amb.status;
+      const isAvailable = !liveSimulation && amb.status === 'AVAILABLE';
+      const markerBg =
+        markerStatus === 'ARRIVED'
+          ? 'bg-blue-600'
+          : markerStatus === 'EN_ROUTE' || markerStatus === 'DISPATCHED'
+          ? 'bg-teal-600'
+          : 'bg-amber-500';
+
+      const ambIconHtml = `
+        <div class="relative flex items-center justify-center">
+          <div class="w-8 h-8 rounded-lg ${markerBg} border-2 border-white shadow-md flex items-center justify-center text-white">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </div>
+        </div>
+      `;
+
+      const ambIcon = L.divIcon({
+        html: ambIconHtml,
+        className: 'ambulance-marker',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      let ambMarker = ambulanceMarkerRef.current[amb.id];
+      if (!ambMarker) {
+        ambMarker = L.marker([currentLat, currentLon], {
+          icon: ambIcon,
+          zIndexOffset: 800,
+        }).addTo(markerGroup);
+        ambulanceMarkerRef.current[amb.id] = ambMarker;
+      }
+
+      ambMarker.setIcon(ambIcon);
+      ambMarker.setLatLng([currentLat, currentLon]);
+      ambMarker.bindPopup(`
+        <div class="p-2">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <h4 class="font-bold text-xs text-slate-800">Ambulance ${amb.vehicle_number}</h4>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+              isAvailable ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+            }">${markerStatus}</span>
+          </div>
+          <p class="text-[11px] font-mono text-slate-500">Location: ${currentLat.toFixed(4)}, ${currentLon.toFixed(4)}</p>
+          ${liveSimulation ? `<p class="text-[10px] text-teal-700 mt-1">ETA ${Math.max(0, Math.round(liveSimulation.etaSecondsRemaining / 60))}m ${Math.round(liveSimulation.etaSecondsRemaining % 60)}s · Progress ${Math.round(liveSimulation.progress * 100)}%</p>` : ''}
+        </div>
+      `);
+    });
+
+    Object.entries(ambulanceMarkerRef.current).forEach(([id, marker]) => {
+      const numericId = Number(id);
+      const stillExists = ambulances.some((amb) => amb.id === numericId);
+      if (!stillExists && marker) {
+        markerGroup.removeLayer(marker);
+        delete ambulanceMarkerRef.current[numericId];
+      }
+    });
+  }, [ambulances, ambulanceSimulation, emergencyPoint, selectedHospitalId, recommendations, onSelectHospital]);
 
   // Recenter Map on Pune
   const handleRecenter = () => {

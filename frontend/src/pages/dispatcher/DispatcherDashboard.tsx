@@ -199,9 +199,18 @@ export const DispatcherDashboard: React.FC = () => {
         );
         fetchData(false);
       } else if (payload.event === 'EMERGENCY_STATUS_UPDATED' && payload.data) {
-        setEmergencies((prev) =>
-          prev.map((e) => (e.id === payload.data.emergency_id ? { ...e, status: payload.data.status } : e))
-        );
+        const updatedEmergencyId = Number(payload.data.emergency_id);
+        setEmergencies((prev) => {
+          const doesExist = prev.some((e) => e.id === updatedEmergencyId);
+          if (!doesExist) {
+            fetchData(false);
+            return prev;
+          }
+
+          return prev.map((e) =>
+            e.id === updatedEmergencyId ? { ...e, status: payload.data.status } : e
+          );
+        });
       }
     }
   );
