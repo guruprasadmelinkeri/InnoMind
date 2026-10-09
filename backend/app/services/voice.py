@@ -29,7 +29,7 @@ async def process_voice_request(
     transcript: str | None = Form(None),
     # Common fields
     username: str = Form(...),
-    latitude: float = Form(...),
+    latitude: float = Form(...), 
     longitude: float = Form(...),
     db: Session = Depends(get_db)
 ):
@@ -181,3 +181,4 @@ async def process_voice_request(
                 print(f"Cleaned up audio file: {audio_path}")
             except OSError as e:
                 print(f"Warning: Failed to clean up audio file {audio_path}: {e}")
+
