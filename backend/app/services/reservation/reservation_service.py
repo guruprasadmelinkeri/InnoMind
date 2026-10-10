@@ -281,6 +281,10 @@ def accept_allocation_request(db: Session, request_id: int) -> Dict[str, Any]:
                 }
             )
 
+    # Continue default automation by assigning an ambulance as soon as hospital acceptance succeeds.
+    from app.services.automation_service import auto_assign_ambulance_for_emergency
+    auto_assign_ambulance_for_emergency(db, emergency.id)
+
     return {
         "request_id": request.id,
         "status": "ACCEPTED",
@@ -330,6 +334,10 @@ def reject_allocation_request(
             "responded_at": request.responded_at.isoformat() if request.responded_at else None
         }
     )
+
+    # Try the next ranked hospital automatically after a rejection.
+    from app.services.automation_service import run_automated_emergency_workflow
+    run_automated_emergency_workflow(db, request.emergency_case_id)
 
     return request
 

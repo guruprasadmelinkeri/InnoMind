@@ -22,6 +22,7 @@ def create_hospital(db: Session, hospital_in: HospitalCreate) -> Hospital:
         longitude=hospital_in.longitude,
         emergency_level=hospital_in.emergency_level,
         trauma_center=hospital_in.trauma_center,
+        automatic_resource_allocation=hospital_in.automatic_resource_allocation,
         status=hospital_in.status,
     )
     db.add(hospital)

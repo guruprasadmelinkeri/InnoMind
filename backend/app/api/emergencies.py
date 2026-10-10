@@ -17,6 +17,7 @@ from app.schemas.reservation import (
 from app.schemas.ambulance import AmbulanceAssignRequest
 from app.schemas.handoff import HandoffRead, HandoffCompleteRequest
 from app.services import emergency_service, ambulance_service
+from app.services.automation_service import run_automated_emergency_workflow
 from app.services.allocation import rank_hospitals
 from app.services.reservation import (
     create_allocation_request,
@@ -138,6 +139,14 @@ def update_emergency_status(
 ):
     """Update the status of an emergency case."""
     return emergency_service.update_emergency_status(db, emergency_id, status_update)
+
+@router.post("/{emergency_id}/automation/retry", summary="Retry automated emergency workflow")
+def retry_automation(
+    emergency_id: int,
+    db: Session = Depends(get_db)
+):
+    """Allow dispatcher override to re-run automated allocation and ambulance assignment safely."""
+    return run_automated_emergency_workflow(db, emergency_id)
 
 @router.delete("/{emergency_id}", status_code=status.HTTP_200_OK, summary="Cancel/delete emergency case")
 def delete_emergency(

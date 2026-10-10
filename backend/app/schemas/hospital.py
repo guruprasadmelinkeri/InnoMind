@@ -11,6 +11,7 @@ class HospitalBase(BaseModel):
     longitude: Optional[Decimal] = Field(default=None, ge=-180, le=180)
     emergency_level: Optional[str] = Field(default="Level 1", max_length=50)
     trauma_center: bool = Field(default=False)
+    automatic_resource_allocation: bool = Field(default=True)
     status: str = Field(default="Active", max_length=50)
 
 class HospitalCreate(HospitalBase):
@@ -23,6 +24,7 @@ class HospitalUpdate(BaseModel):
     longitude: Optional[Decimal] = Field(default=None, ge=-180, le=180)
     emergency_level: Optional[str] = Field(default=None, max_length=50)
     trauma_center: Optional[bool] = Field(default=None)
+    automatic_resource_allocation: Optional[bool] = Field(default=None)
     status: Optional[str] = Field(default=None, max_length=50)
 
 class HospitalResponse(HospitalBase):

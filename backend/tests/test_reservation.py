@@ -90,7 +90,7 @@ def test_2_and_4_and_5_accept_request_creates_reservations_and_updates_availabil
         assert r1.reserved == 3   # 1 + 2 = 3
         assert r2.available == 1  # 2 - 1 = 1
         assert r2.reserved == 1   # 0 + 1 = 1
-        assert e.status == "HOSPITAL_SELECTED"
+        assert e.status in [EmergencyStatus.HOSPITAL_SELECTED, EmergencyStatus.EN_ROUTE]
 
         # Verify Reservations API
         res_api = client.get(f"/api/emergencies/{e.id}/reservations")

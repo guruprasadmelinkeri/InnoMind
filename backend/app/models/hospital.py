@@ -16,6 +16,7 @@ class Hospital(Base):
     longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6), nullable=True)
     emergency_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="Level 1")
     trauma_center: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    automatic_resource_allocation: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="Active", nullable=False)
     
     created_at: Mapped[datetime] = mapped_column(

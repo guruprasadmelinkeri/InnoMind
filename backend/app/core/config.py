@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "mediroute"
     DATABASE_URL: Union[str, None] = None
     GEMINI_API_KEY: Union[str, None] = None
+    AUTO_ARRIVAL_DELAY_SECONDS: int = 30
 
 
     @property

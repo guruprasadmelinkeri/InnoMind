@@ -14,7 +14,8 @@ from app.models.handoff import Handoff, HandoffStatus
 
 @pytest.fixture(scope="function")
 def db_session():
-    """Ensure database tables are created."""
+    """Ensure database tables are created and cleaned for each test."""
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = next(get_db())
     try:
@@ -84,7 +85,7 @@ def create_sample_setup(db: Session):
     return hospital, emergency, ambulance
 
 def test_1_assign_ambulance(client, db_session):
-    """Test 1: Assign ambulance to emergency case with accepted hospital."""
+    """Test 1: Verify automatic ambulance assignment after allocation acceptance."""
     hospital, emergency, ambulance = create_sample_setup(db_session)
 
     # 1. Create and accept allocation request
@@ -95,18 +96,16 @@ def test_1_assign_ambulance(client, db_session):
     accept_resp = client.post(f"/api/allocation-requests/{req_id}/accept")
     assert accept_resp.status_code == 200
 
-    # 2. Assign ambulance
-    assign_resp = client.post(
-        f"/api/emergencies/{emergency.id}/assign-ambulance",
-        json={"ambulance_id": ambulance.id}
-    )
-    assert assign_resp.status_code == 200
-    data = assign_resp.json()
-    assert data["status"] == "EN_ROUTE"
-    assert data["assigned_ambulance_id"] == ambulance.id
+    # 2. Verify automatic ambulance assignment happened
+    emergency_resp = client.get(f"/api/emergencies/{emergency.id}")
+    assert emergency_resp.status_code == 200
+    emergency_data = emergency_resp.json()
+    assert emergency_data["status"] == "EN_ROUTE"
+    assert emergency_data["assigned_ambulance_id"] == ambulance.id
 
-    # Check ambulance status
+    # 3. Verify ambulance status was updated automatically
     amb_resp = client.get(f"/api/ambulances/{ambulance.id}")
+    assert amb_resp.status_code == 200
     assert amb_resp.json()["status"] == "EN_ROUTE"
 
 def test_2_cannot_assign_unavailable_ambulance(client, db_session):
@@ -144,11 +143,22 @@ def test_4_ambulance_arrival(client, db_session):
     """Test 4: Marking ambulance ARRIVED updates emergency status and creates PENDING handoff."""
     hospital, emergency, ambulance = create_sample_setup(db_session)
 
-    # Setup accepted request & assigned ambulance
+    # Setup accepted request & assigned ambulance (assignment happens automatically)
     req_resp = client.post(f"/api/emergencies/{emergency.id}/requests", json={"hospital_id": hospital.id})
     req_id = req_resp.json()["id"]
     client.post(f"/api/allocation-requests/{req_id}/accept")
-    client.post(f"/api/emergencies/{emergency.id}/assign-ambulance", json={"ambulance_id": ambulance.id})
+
+    # Verify ambulance was automatically assigned
+    emergency_resp = client.get(f"/api/emergencies/{emergency.id}")
+    assert emergency_resp.status_code == 200
+    emergency_data = emergency_resp.json()
+    assert emergency_data["status"] == "EN_ROUTE"
+    assert emergency_data["assigned_ambulance_id"] == ambulance.id
+
+    # Verify ambulance status
+    amb_resp = client.get(f"/api/ambulances/{ambulance.id}")
+    assert amb_resp.status_code == 200
+    assert amb_resp.json()["status"] == "EN_ROUTE"
 
     # Mark arrived
     arrive_resp = client.patch(f"/api/ambulances/{ambulance.id}/status", json={"status": "ARRIVED"})
@@ -171,12 +181,23 @@ def test_5_and_6_start_handoff_and_pre_arrival_prevention(client, db_session):
     req_id = req_resp.json()["id"]
     client.post(f"/api/allocation-requests/{req_id}/accept")
 
+    # Verify ambulance was automatically assigned
+    emergency_resp = client.get(f"/api/emergencies/{emergency.id}")
+    assert emergency_resp.status_code == 200
+    emergency_data = emergency_resp.json()
+    assert emergency_data["status"] == "EN_ROUTE"
+    assert emergency_data["assigned_ambulance_id"] == ambulance.id
+
+    # Verify ambulance status
+    amb_resp = client.get(f"/api/ambulances/{ambulance.id}")
+    assert amb_resp.status_code == 200
+    assert amb_resp.json()["status"] == "EN_ROUTE"
+
     # Test 6: Attempt start handoff BEFORE arrival (should fail)
     early_start = client.post(f"/api/emergencies/{emergency.id}/handoff/start")
     assert early_start.status_code in [400, 409]
 
-    # Assign ambulance & mark arrived
-    client.post(f"/api/emergencies/{emergency.id}/assign-ambulance", json={"ambulance_id": ambulance.id})
+    # Mark arrived
     client.patch(f"/api/ambulances/{ambulance.id}/status", json={"status": "ARRIVED"})
 
     # Test 5: Start handoff after arrival (should succeed)
@@ -197,8 +218,23 @@ def test_7_8_9_10_complete_handoff_workflow(client, db_session):
     req_resp = client.post(f"/api/emergencies/{emergency.id}/requests", json={"hospital_id": hospital.id})
     req_id = req_resp.json()["id"]
     client.post(f"/api/allocation-requests/{req_id}/accept")
-    client.post(f"/api/emergencies/{emergency.id}/assign-ambulance", json={"ambulance_id": ambulance.id})
+
+    # Verify ambulance was automatically assigned
+    emergency_resp = client.get(f"/api/emergencies/{emergency.id}")
+    assert emergency_resp.status_code == 200
+    emergency_data = emergency_resp.json()
+    assert emergency_data["status"] == "EN_ROUTE"
+    assert emergency_data["assigned_ambulance_id"] == ambulance.id
+
+    # Verify ambulance status
+    amb_resp = client.get(f"/api/ambulances/{ambulance.id}")
+    assert amb_resp.status_code == 200
+    assert amb_resp.json()["status"] == "EN_ROUTE"
+
+    # Mark arrived
     client.patch(f"/api/ambulances/{ambulance.id}/status", json={"status": "ARRIVED"})
+
+    # Start handoff
     client.post(f"/api/emergencies/{emergency.id}/handoff/start")
 
     # Test 7: Complete handoff
@@ -219,6 +255,7 @@ def test_7_8_9_10_complete_handoff_workflow(client, db_session):
 
     # Test 9: Ambulance becomes AVAILABLE
     amb_resp = client.get(f"/api/ambulances/{ambulance.id}")
+    assert amb_resp.status_code == 200
     assert amb_resp.json()["status"] == "AVAILABLE"
 
     # Test 10: Emergency reaches HANDOFF_COMPLETED
@@ -233,27 +270,33 @@ def test_11_and_12_websocket_events(client, db_session):
     req_id = req_resp.json()["id"]
     client.post(f"/api/allocation-requests/{req_id}/accept")
 
+    # Verify ambulance was automatically assigned
+    emergency_resp = client.get(f"/api/emergencies/{emergency.id}")
+    assert emergency_resp.status_code == 200
+    emergency_data = emergency_resp.json()
+    assert emergency_data["status"] == "EN_ROUTE"
+    assert emergency_data["assigned_ambulance_id"] == ambulance.id
+
+    # Verify ambulance status
+    amb_resp = client.get(f"/api/ambulances/{ambulance.id}")
+    assert amb_resp.status_code == 200
+    assert amb_resp.json()["status"] == "EN_ROUTE"
+
     with client.websocket_connect("/ws") as websocket:
         # Handshake
         websocket.receive_json()
 
-        # 1. Assign Ambulance -> WS event
-        client.post(f"/api/emergencies/{emergency.id}/assign-ambulance", json={"ambulance_id": ambulance.id})
-        events = [websocket.receive_json()["event"] for _ in range(3)]
-        assert "AMBULANCE_ASSIGNED" in events
-        assert "AMBULANCE_STATUS_UPDATED" in events
-
-        # 2. Mark Arrived -> WS events
+        # 1. Mark Arrived -> WS events
         client.patch(f"/api/ambulances/{ambulance.id}/status", json={"status": "ARRIVED"})
         arrive_events = [websocket.receive_json()["event"] for _ in range(3)]
         assert "AMBULANCE_ARRIVED" in arrive_events
 
-        # 3. Start Handoff -> WS event
+        # 2. Start Handoff -> WS event
         client.post(f"/api/emergencies/{emergency.id}/handoff/start")
         start_event = websocket.receive_json()
         assert start_event["event"] == "HANDOFF_STARTED"
 
-        # 4. Complete Handoff -> WS events
+        # 3. Complete Handoff -> WS events
         client.post(
             f"/api/emergencies/{emergency.id}/handoff/complete",
             json={"received_by": "Dr. Sarah Conner", "notes": "Handoff complete"}

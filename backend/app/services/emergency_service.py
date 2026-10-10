@@ -75,6 +75,10 @@ def create_emergency_case(db: Session, emergency_in: EmergencyCaseCreate) -> Eme
         }
     )
 
+    # Default workflow runs automatically; dispatcher overrides remain available for exceptions.
+    from app.services.automation_service import schedule_automated_workflow
+    schedule_automated_workflow(emergency.id)
+
     return emergency
 
 def update_emergency_status(
