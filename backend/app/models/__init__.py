@@ -6,6 +6,7 @@ from app.models.allocation_request import AllocationRequest, AllocationRequestSt
 from app.models.reservation import Reservation, ReservationStatus
 from app.models.ambulance import Ambulance, AmbulanceStatus
 from app.models.handoff import Handoff, HandoffStatus
+from app.models.account import Account
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "AmbulanceStatus",
     "Handoff",
     "HandoffStatus",
+    "Account",
 ]

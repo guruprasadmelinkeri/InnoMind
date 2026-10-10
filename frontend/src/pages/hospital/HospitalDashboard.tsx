@@ -8,6 +8,7 @@ import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../components/common/Toast';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { useAuth } from '../../services/auth';
 import {
   Building2,
   MapPin,
@@ -25,6 +26,8 @@ import {
 
 export const HospitalDashboard: React.FC = () => {
   const { hospitalId } = useParams<{ hospitalId: string }>();
+  const { account } = useAuth();
+  const isAdmin = account?.role === 'ADMIN';
   const id = Number(hospitalId);
   const { addToast } = useToast();
 
@@ -252,7 +255,7 @@ export const HospitalDashboard: React.FC = () => {
               )}
             </button>
             <Link
-              to={`/hospital/${hospital.id}/requests`}
+              to={isAdmin ? `/dispatcher/hospitals/${hospital.id}/requests` : `/hospital/${hospital.id}/requests`}
               className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 transition-all flex items-center gap-2"
             >
               <Inbox className="w-4 h-4" /> Incoming Requests
@@ -331,8 +334,9 @@ export const HospitalDashboard: React.FC = () => {
                 <ResourceCard resource={res} />
                 <button
                   onClick={() => handleOpenEdit(res)}
-                  className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800/90 hover:bg-emerald-600 text-white hover:text-white border border-slate-700 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
+                  className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800/90 hover:bg-emerald-600 text-white hover:text-white border border-slate-700 transition-all opacity-100 shadow-lg sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                   title="Update capacity"
+                  aria-label={`Update ${res.resource_type} capacity`}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>

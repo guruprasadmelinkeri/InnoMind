@@ -50,6 +50,10 @@ class EmergencyCase(Base):
         nullable=True,
         index=True
     )
+    created_by_account_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    assigned_doctor_name: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     # Batch allocation fields
     batch_outcome: Mapped[Optional[str]] = mapped_column(String(), nullable=True)
     batch_explanation: Mapped[Optional[str]] = mapped_column(String(), nullable=True)

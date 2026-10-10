@@ -31,3 +31,53 @@
 .leaflet-container {
   font-family: inherit !important;
 }
+
+/* Legacy workflow components retain their utility classes while all role areas
+   share a fresh light clinical canvas. */
+.dashboard-admin .bg-slate-950,
+.dashboard-admin .bg-slate-900,
+.dashboard-admin .bg-slate-900\/80,
+.dashboard-admin .bg-slate-900\/90,
+.dashboard-admin .bg-slate-950\/80,
+.dashboard-user .bg-slate-950,
+.dashboard-user .bg-slate-900,
+.dashboard-user .bg-slate-900\/80,
+.dashboard-user .bg-slate-900\/90,
+.dashboard-user .bg-slate-950\/80,
+.dashboard-hospital .bg-slate-950,
+.dashboard-hospital .bg-slate-900,
+.dashboard-hospital .bg-slate-900\/80,
+.dashboard-hospital .bg-slate-900\/90,
+.dashboard-hospital .bg-slate-950\/80 {
+  background-color: #fff !important;
+}
+.dashboard-admin .bg-slate-800,
+.dashboard-user .bg-slate-800,
+.dashboard-hospital .bg-slate-800 { background-color: #f1f5f9 !important; }
+.dashboard-admin .border-slate-800,
+.dashboard-admin .border-slate-700,
+.dashboard-admin .border-slate-900,
+.dashboard-user .border-slate-800,
+.dashboard-user .border-slate-700,
+.dashboard-user .border-slate-900,
+.dashboard-hospital .border-slate-800,
+.dashboard-hospital .border-slate-700,
+.dashboard-hospital .border-slate-900 { border-color: #e2e8f0 !important; }
+.dashboard-admin .text-slate-100,
+.dashboard-user .text-slate-100,
+.dashboard-hospital .text-slate-100 { color: #0f172a !important; }
+.dashboard-admin .text-slate-200,
+.dashboard-user .text-slate-200,
+.dashboard-hospital .text-slate-200 { color: #1e293b !important; }
+.dashboard-admin .text-slate-300,
+.dashboard-user .text-slate-300,
+.dashboard-hospital .text-slate-300 { color: #334155 !important; }
+.dashboard-admin .text-slate-400,
+.dashboard-user .text-slate-400,
+.dashboard-hospital .text-slate-400 { color: #64748b !important; }
+.dashboard-admin .text-slate-500,
+.dashboard-user .text-slate-500,
+.dashboard-hospital .text-slate-500 { color: #64748b !important; }
+.dashboard-admin input, .dashboard-admin select, .dashboard-admin textarea,
+.dashboard-user input, .dashboard-user select, .dashboard-user textarea,
+.dashboard-hospital input, .dashboard-hospital select, .dashboard-hospital textarea { color: #0f172a; }

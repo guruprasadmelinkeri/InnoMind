@@ -21,6 +21,8 @@ import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../components/common/Toast';
 import { parseApiError } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { useAuth } from '../../services/auth';
+import { apiClient } from '../../services/api';
 import {
   Inbox,
   CheckCircle2,
@@ -47,6 +49,7 @@ interface ActiveHandoffItem {
 }
 
 export const HospitalRequestsPage: React.FC = () => {
+  const { account } = useAuth();
   const { hospitalId } = useParams<{ hospitalId: string }>();
   const id = Number(hospitalId);
   const { addToast } = useToast();
@@ -64,6 +67,8 @@ export const HospitalRequestsPage: React.FC = () => {
 
   // Reject Modal state
   const [rejectingRequest, setRejectingRequest] = useState<AllocationRequest | null>(null);
+  const [doctorNames, setDoctorNames] = useState<Record<number, string>>({});
+  const [assigningDoctorId, setAssigningDoctorId] = useState<number | null>(null);
 
   // 409 Conflict Error Modal state
   const [conflictError, setConflictError] = useState<{ title: string; message: string } | null>(null);
@@ -205,6 +210,19 @@ export const HospitalRequestsPage: React.FC = () => {
     }
   };
 
+  const handleAssignDoctor = async (emergency: EmergencyCase) => {
+    const doctorName = (doctorNames[emergency.id] || emergency.assigned_doctor_name || '').trim();
+    if (!doctorName) return;
+    setAssigningDoctorId(emergency.id);
+    try {
+      await apiClient.patch(`/emergencies/${emergency.id}/assigned-doctor`, { doctor_name: doctorName });
+      addToast('success', 'Receiving doctor assigned', `${doctorName} is assigned to ${emergency.case_number}.`);
+      await fetchRequests(true);
+    } catch (err: any) {
+      addToast('error', err?.response?.data?.detail || 'Could not assign the receiving doctor.');
+    } finally { setAssigningDoctorId(null); }
+  };
+
   if (loading) {
     return (
       <div className="py-20 flex flex-col items-center justify-center">
@@ -258,7 +276,7 @@ export const HospitalRequestsPage: React.FC = () => {
             Refresh
           </button>
           <Link
-            to={`/hospital/${hospital.id}`}
+            to={account?.role === 'ADMIN' ? '/dispatcher/hospitals' : `/hospital/${hospital.id}`}
             className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 flex items-center gap-2 transition-all"
           >
             <Building2 className="w-4 h-4 text-emerald-400" /> View Capacity Dashboard
@@ -420,6 +438,12 @@ export const HospitalRequestsPage: React.FC = () => {
                   </div>
                 )}
 
+                {request.status === 'ACCEPTED' && (
+                  <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="min-w-0 flex-1"><label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-blue-800">Receiving doctor</label><input maxLength={160} value={doctorNames[emergency.id] ?? emergency.assigned_doctor_name ?? ''} onChange={e=>setDoctorNames(prev=>({...prev,[emergency.id]:e.target.value}))} placeholder="Enter assigned doctor name" className="h-10 w-full rounded-lg border border-blue-200 bg-white px-3 text-sm"/><p className="mt-1 text-[10px] text-slate-500">Saved to this accepted emergency record.</p></div><button onClick={()=>void handleAssignDoctor(emergency)} disabled={assigningDoctorId===emergency.id||!(doctorNames[emergency.id]??emergency.assigned_doctor_name)?.trim()} className="h-10 rounded-lg bg-blue-700 px-4 text-xs font-bold text-white hover:bg-blue-800 disabled:opacity-50">{assigningDoctorId===emergency.id?'Saving…':'Assign doctor'}</button>
+                  </div>
+                )}
+
                 {/* Action Footer for PENDING requests */}
                 {request.status === 'PENDING' && (
                   <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -457,14 +481,14 @@ export const HospitalRequestsPage: React.FC = () => {
                 )}
 
                 {/* Link to Dispatcher View */}
-                <div className="flex items-center justify-end text-[11px] text-slate-500 pt-1">
+                {account?.role === 'ADMIN' && <div className="flex items-center justify-end text-[11px] text-slate-500 pt-1">
                   <Link
                     to={`/dispatcher/emergency/${emergency.id}`}
                     className="hover:text-emerald-400 transition-colors flex items-center gap-1"
                   >
                     View Emergency Detail Page <ArrowRight className="w-3 h-3" />
                   </Link>
-                </div>
+                </div>}
               </div>
             );
           })}

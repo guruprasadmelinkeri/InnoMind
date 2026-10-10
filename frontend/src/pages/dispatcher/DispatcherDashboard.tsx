@@ -14,6 +14,7 @@ import {
   Loader2,
   Truck,
   RotateCcw,
+  GitBranch,
 } from 'lucide-react';
 import { getEmergencies } from '../../services/emergencyApi';
 import { getHospitals } from '../../services/hospitalApi';
@@ -28,7 +29,7 @@ import { StatusBadge } from '../../components/emergencies/StatusBadge';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { EmptyState } from '../../components/common/EmptyState';
-import { parseApiError } from '../../services/api';
+import { apiClient, parseApiError } from '../../services/api';
 import { useToast } from '../../components/common/Toast';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { PuneMap } from '../../components/map/PuneMap';
@@ -54,6 +55,7 @@ export const DispatcherDashboard: React.FC = () => {
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedHospitalId, setSelectedHospitalId] = useState<number | null>(null);
   const [submittingHospitalId, setSubmittingHospitalId] = useState<number | null>(null);
+  const [autoModeRunning, setAutoModeRunning] = useState(false);
 
   const { addToast } = useToast();
 
@@ -66,7 +68,7 @@ export const DispatcherDashboard: React.FC = () => {
         getHospitals(),
         getAmbulances(),
       ]);
-      setEmergencies(eData);
+      setEmergencies([...eData].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
       setHospitals(hData);
       setAmbulances(aData);
 
@@ -154,6 +156,30 @@ export const DispatcherDashboard: React.FC = () => {
       addToast('error', 'Request Failed', parsed.message);
     } finally {
       setSubmittingHospitalId(null);
+    }
+  };
+
+  const handleRunAutoMode = async () => {
+    setAutoModeRunning(true);
+    try {
+      const { data } = await apiClient.post<{ status: string; scheduled_emergencies: number }>(
+        '/emergencies/automation/run-pending'
+      );
+      if (data.status === 'idle') {
+        addToast('info', 'No Cases Waiting', 'There are no pending emergencies to process.');
+      } else {
+        addToast(
+          'success',
+          'Auto Mode Started',
+            `Auto Mode is processing ${data.scheduled_emergencies} case(s), reserving only confirmed capacity, assigning available ambulances, and completing arrival handoffs automatically.`
+        );
+      }
+      window.setTimeout(() => void fetchData(false), 6000);
+    } catch (err) {
+      const parsed = parseApiError(err);
+      addToast('error', 'Auto Mode Could Not Start', parsed.message);
+    } finally {
+      setAutoModeRunning(false);
     }
   };
 
@@ -263,13 +289,31 @@ export const DispatcherDashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleRunAutoMode}
+            disabled={autoModeRunning}
+            title="Run eligible pending cases through automatic hospital, ambulance, clinician, and handoff steps"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 transition-colors disabled:cursor-wait disabled:opacity-60"
+          >
+            {autoModeRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            <span>{autoModeRunning ? 'Starting Auto Mode…' : 'Run Auto Mode'}</span>
+          </button>
           <Link
             to="/dispatcher/simulation"
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition-colors"
           >
             <Zap className="w-4 h-4 text-teal-600" />
             <span>Simulation Lab</span>
+          </Link>
+
+          <Link
+            to="/dispatcher/allocation-simulation"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+          >
+            <GitBranch className="w-4 h-4 text-indigo-600" />
+            <span>Batch Allocation & Replanning</span>
           </Link>
 
           <Link

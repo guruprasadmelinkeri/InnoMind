@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     DATABASE_URL: Union[str, None] = None
     GEMINI_API_KEY: Union[str, None] = None
     AUTO_ARRIVAL_DELAY_SECONDS: int = 30
+    AUTH_SECRET_KEY: str = ""
+    AUTH_TOKEN_TTL_MINUTES: int = 720
 
 
     @property

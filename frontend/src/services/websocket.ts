@@ -41,8 +41,8 @@ class WebSocketService {
     // Determine WS URL based on env or current window host
     const defaultWsUrl =
       window.location.protocol === 'https:'
-        ? 'wss://localhost:8000/ws'
-        : 'ws://localhost:8000/ws';
+        ? `wss://${window.location.hostname}:8000/ws`
+        : `ws://${window.location.hostname}:8000/ws`;
 
     this.url = import.meta.env.VITE_WS_URL || defaultWsUrl;
   }
@@ -56,7 +56,10 @@ class WebSocketService {
     this.updateStatus('RECONNECTING');
 
     try {
-      this.ws = new WebSocket(this.url);
+      const token = localStorage.getItem('mediroute_access_token');
+      if (!token) { this.updateStatus('OFFLINE'); return; }
+      const separator = this.url.includes('?') ? '&' : '?';
+      this.ws = new WebSocket(`${this.url}${separator}token=${encodeURIComponent(token)}`);
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;

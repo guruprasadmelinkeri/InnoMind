@@ -52,8 +52,6 @@ export const CreateEmergencyPage: React.FC = () => {
 
   const [requirements, setRequirements] = useState<EmergencyRequirementCreate[]>([
     { resource_type: 'ICU_BED', quantity: 1, required: true },
-    { resource_type: 'VENTILATOR', quantity: 1, required: true },
-    { resource_type: 'TRAUMA_BED', quantity: 1, required: true },
   ]);
 
   const [submitting, setSubmitting] = useState(false);
@@ -521,6 +519,9 @@ export const CreateEmergencyPage: React.FC = () => {
               <Plus className="w-3.5 h-3.5" /> Add Resource
             </button>
           </div>
+          <p className="text-xs leading-5 text-slate-500">
+            Every mandatory resource listed here must be available at the hospital. Keep only the resources the patient needs; add more when clinically required.
+          </p>
 
           <div className="space-y-2.5">
             {requirements.map((req, index) => (

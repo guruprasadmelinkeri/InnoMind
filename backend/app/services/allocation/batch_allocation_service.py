@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.models.hospital import Hospital
-from app.models.emergency import EmergencyCase, EmergencySeverity
+from app.models.emergency import EmergencyCase, EmergencySeverity, EmergencyStatus
 from app.models.resource import HospitalResource, ResourceType
 from app.models.allocation_request import AllocationRequestStatus
+from app.models.allocation_request import AllocationRequest
 from app.services.allocation import rank_hospitals, calculate_resource_match, calculate_travel_time, calculate_travel_score, calculate_freshness, calculate_specialization, calculate_final_score
 from app.services.allocation.distance import haversine_distance
 from app.services.allocation.scoring import WEIGHT_RESOURCE_MATCH, WEIGHT_TRAVEL, WEIGHT_FRESHNESS, WEIGHT_SPECIALIZATION
@@ -104,6 +105,21 @@ def batch_allocate(
 
     # Fetch active hospitals
     hospitals = db.query(Hospital).filter(Hospital.status == "Active").all()
+    request_rows = db.query(AllocationRequest).filter(
+        AllocationRequest.emergency_case_id.in_(emergency_ids)
+    ).all()
+    rejected_pairs = {
+        (request.emergency_case_id, request.hospital_id)
+        for request in request_rows
+        if request.status == AllocationRequestStatus.REJECTED
+    }
+    accepted_requests = {
+        request.emergency_case_id: request
+        for request in request_rows
+        if request.status == AllocationRequestStatus.ACCEPTED
+        and next((emergency.status for emergency in emergencies if emergency.id == request.emergency_case_id), None)
+        in [EmergencyStatus.HOSPITAL_SELECTED, EmergencyStatus.EN_ROUTE, EmergencyStatus.ARRIVED, EmergencyStatus.HANDOFF_COMPLETED]
+    }
 
     # Build eligibility matrix and scores
     # We'll store for each emergency a list of eligible hospitals with scores
@@ -111,6 +127,8 @@ def batch_allocate(
     for emergency in emergencies:
         options = []
         for hospital in hospitals:
+            if (emergency.id, hospital.id) in rejected_pairs:
+                continue
             score, eligible, reasons, details = compute_pair_score(db, emergency, hospital)
             if eligible:
                 options.append({
@@ -144,7 +162,30 @@ def batch_allocate(
     explanations: Dict[int, str] = {}
     assignment_details: Dict[int, Dict[str, Any]] = {}
 
+    # An accepted request is a confirmed handover. Keep it assigned and do not
+    # count its reserved resources a second time during a later replan.
+    for emergency in emergencies:
+        accepted_request = accepted_requests.get(emergency.id)
+        if accepted_request:
+            assignments[emergency.id] = accepted_request.hospital_id
+            hospital = next((h for h in hospitals if h.id == accepted_request.hospital_id), None)
+            explanations[emergency.id] = (
+                f"Preserved confirmed handover at {hospital.name if hospital else f'Hospital #{accepted_request.hospital_id}'}; "
+                "its reservation remains in place during replanning."
+            )
+            option = next(
+                (opt for opt in emergency_options[emergency.id] if opt["hospital"].id == accepted_request.hospital_id),
+                None,
+            )
+            if option:
+                assignment_details[emergency.id] = option["details"]
+            elif hospital:
+                _, _, _, details = compute_pair_score(db, emergency, hospital)
+                assignment_details[emergency.id] = details
+
     for emergency in sorted_emergencies:
+        if emergency.id in assignments:
+            continue
         assigned = False
         for opt in emergency_options[emergency.id]:
             hospital = opt["hospital"]
@@ -207,6 +248,13 @@ def batch_allocate(
     results = []
     for emergency in emergencies:
         eid = emergency.id
+        request_status = next((
+            request.status.value if hasattr(request.status, "value") else str(request.status)
+            for request in request_rows
+            if request.emergency_case_id == eid
+            and request.hospital_id == assignments[eid]
+            and request.status in [AllocationRequestStatus.PENDING, AllocationRequestStatus.ACCEPTED]
+        ), None)
         results.append({
             "emergency_id": eid,
             "emergency_case_number": emergency.case_number,
@@ -218,6 +266,7 @@ def batch_allocate(
             ),
             "explanation": explanations[eid],
             "assignment_details": assignment_details.get(eid, {}),
+            "request_status": request_status,
             "status": "ASSIGNED" if assignments[eid] is not None else "UNSERVED",
         })
 

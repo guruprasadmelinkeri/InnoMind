@@ -12,13 +12,17 @@ from app.services.reservation import (
     reject_allocation_request,
     get_allocation_request_by_id
 )
+from app.core.auth import require_roles, assert_hospital_scope
+from app.models.account import Account
+from app.models.allocation_request import AllocationRequest
 
 router = APIRouter(prefix="/allocation-requests", tags=["Allocation Requests"])
 
 @router.get("/{request_id}", response_model=AllocationRequestResponse, summary="Get allocation request details")
 def get_allocation_request(
     request_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN", "HOSPITAL")),
 ):
     """Retrieve details of a specific allocation request by ID."""
     request = get_allocation_request_by_id(db, request_id)
@@ -27,24 +31,33 @@ def get_allocation_request(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Allocation request with id {request_id} not found"
         )
+    assert_hospital_scope(account, request.hospital_id)
     return request
 
 @router.post("/{request_id}/accept", response_model=AcceptSuccessResponse, summary="Accept allocation request & reserve resources")
 def accept_request(
     request_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN", "HOSPITAL")),
 ):
     """
     Hospital accepts an emergency allocation request.
     Atomically verifies and reserves required resources in a single database transaction.
     """
+    request = db.get(AllocationRequest, request_id)
+    if request:
+        assert_hospital_scope(account, request.hospital_id)
     return accept_allocation_request(db, request_id)
 
 @router.post("/{request_id}/reject", response_model=AllocationRequestResponse, summary="Reject allocation request")
 def reject_request(
     request_id: int,
     reject_in: AllocationRejectRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN", "HOSPITAL")),
 ):
     """Hospital rejects an emergency allocation request with a reason."""
+    request = db.get(AllocationRequest, request_id)
+    if request:
+        assert_hospital_scope(account, request.hospital_id)
     return reject_allocation_request(db, request_id, reason=reject_in.reason)

@@ -9,14 +9,16 @@ import {
   RefreshCw,
   Bot,
   ArrowLeft,
+  Truck,
+  Compass,
   CircleAlert,
   CircleHelp,
   Info
 } from 'lucide-react';
-import { getEmergencies, createEmergency } from '../../services/emergencyApi';
-import { getHospitals, updateHospitalResource } from '../../services/hospitalApi';
-import { getEmergencyRequests } from '../../services/allocationApi';
-import { rejectAllocationRequest } from '../../services/reservationApi';
+import { getEmergencies, createEmergency, updateEmergencyStatus } from '../../services/emergencyApi';
+import { getHospitals, updateHospital, updateHospitalResource } from '../../services/hospitalApi';
+import { createAllocationRequest, getEmergencyRequests } from '../../services/allocationApi';
+import { acceptAllocationRequest, rejectAllocationRequest } from '../../services/reservationApi';
 import { performBatchAllocation } from '../../services/batchAllocationApi'; // We'll create this service
 import type { Hospital, ResourceType } from '../../types/hospital';
 import type { EmergencyCase, EmergencyCaseCreate, EmergencySeverity } from '../../types/emergency';
@@ -54,6 +56,7 @@ export const AllocationSimulation: React.FC = () => {
 
   // Track which hospitals have been modified in simulation
   const [originalHospitalResources, setOriginalHospitalResources] = useState<Map<number, Map<ResourceType, { available: number; total: number }>>>(new Map());
+  const [originalHospitalLocations, setOriginalHospitalLocations] = useState<Map<number, { latitude: number; longitude: number }>>(new Map());
   const [modifiedHospitals, setModifiedHospitals] = useState<Set<number>>(new Set());
 
   // WebSocket connection for real-time updates
@@ -100,6 +103,9 @@ export const AllocationSimulation: React.FC = () => {
         originalResources.set(hospital.id, resourcesMap);
       });
       setOriginalHospitalResources(originalResources);
+      setOriginalHospitalLocations(new Map(hData
+        .filter(hospital => hospital.latitude !== undefined && hospital.latitude !== null && hospital.longitude !== undefined && hospital.longitude !== null)
+        .map(hospital => [hospital.id, { latitude: hospital.latitude!, longitude: hospital.longitude! }])));
 
       // Clear any existing simulation data
       setSimulationEmergencies([]);
@@ -258,10 +264,11 @@ export const AllocationSimulation: React.FC = () => {
               hospital.resources.map(async resource => {
                 const original = resourcesMap.get(resource.resource_type);
                 if (original) {
+                  const total = Math.max(original.total, resource.reserved + resource.buffer);
                   await updateHospitalResource(hospitalId, {
                     resource_type: resource.resource_type,
-                    total: original.total,
-                    available: original.available,
+                    total,
+                    available: Math.min(original.available, Math.max(0, total - resource.reserved - resource.buffer)),
                     reserved: resource.reserved, // Keep current reserved count
                     buffer: resource.buffer
                   });
@@ -280,15 +287,22 @@ export const AllocationSimulation: React.FC = () => {
       setTimelineEvents([]);
       setModifiedHospitals(new Set());
 
-      // Reload base data
-      const [hData, eData] = await Promise.all([
-        getHospitals(),
-        getEmergencies()
-      ]);
+      await Promise.all(Array.from(originalHospitalLocations.entries()).map(async ([hospitalId, location]) => {
+        const hospital = hospitals.find(item => item.id === hospitalId);
+        if (hospital) {
+          await updateHospital(hospitalId, {
+            name: hospital.name,
+            latitude: location.latitude,
+            longitude: location.longitude,
+          });
+        }
+      }));
+
+      // Reload the restored resources, locations, and simulation cases.
+      const [hData, eData] = await Promise.all([getHospitals(), getEmergencies()]);
       setHospitals(hData);
       setEmergencies(eData);
 
-      // Restore original resources
       const originalResources = new Map<number, Map<ResourceType, { available: number; total: number }>>();
       hData.forEach(hospital => {
         const resourcesMap = new Map<ResourceType, { available: number; total: number }>();
@@ -309,10 +323,14 @@ export const AllocationSimulation: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [hospitals, originalHospitalResources]);
+  }, [hospitals, originalHospitalResources, originalHospitalLocations]);
 
   // Create simulation emergencies
-  const createSimulationEmergencies = useCallback(async (count: number, severity: EmergencySeverity = 'HIGH') => {
+  const createSimulationEmergencies = useCallback(async (
+    count: number,
+    severity: EmergencySeverity = 'HIGH',
+    requiredResource?: ResourceType
+  ) => {
     setIsLoading(true);
     try {
       const newEmergencies: EmergencyCase[] = [];
@@ -327,12 +345,12 @@ export const AllocationSimulation: React.FC = () => {
           pickup_longitude: 73.8410 + (Math.random() - 0.5) * 0.1,
           requirements: [
             {
-              resource_type: (Math.random() > 0.5 ? 'ICU_BED' : 'VENTILATOR') as ResourceType,
+              resource_type: requiredResource ?? (Math.random() > 0.5 ? 'ICU_BED' : 'VENTILATOR') as ResourceType,
               quantity: 1,
               required: true
             },
             // Sometimes add both resources for more complex scenarios
-            ...(Math.random() > 0.7 ? [{
+            ...(!requiredResource && Math.random() > 0.7 ? [{
               resource_type: (Math.random() > 0.5 ? 'ICU_BED' : 'VENTILATOR') as ResourceType,
               quantity: 1,
               required: true
@@ -361,8 +379,8 @@ export const AllocationSimulation: React.FC = () => {
   }, []);
 
   // Run batch allocation on simulation emergencies
-  const runBatchAllocation = useCallback(async () => {
-    if (simulationEmergencies.length === 0) {
+  const runBatchAllocation = useCallback(async (additionalEmergencyIds: number[] = []) => {
+    if (simulationEmergencies.length === 0 && additionalEmergencyIds.length === 0) {
       addToast('warning', 'No Emergencies', 'Please create simulation emergencies first');
       return;
     }
@@ -373,23 +391,24 @@ export const AllocationSimulation: React.FC = () => {
     try {
       // Clear previous results
       setBatchResults(null);
+      const emergencyIds = Array.from(new Set([
+        ...simulationEmergencies.map(e => e.id),
+        ...additionalEmergencyIds,
+      ]));
       setTimelineEvents(prev => [...prev, {
         id: `batch_start-${Date.now()}`,
         timestamp: new Date().toISOString(),
         type: 'batch_start',
         title: 'Batch Allocation Started',
-        description: `Beginning batch allocation for ${simulationEmergencies.length} emergencies`,
+        description: `Beginning batch allocation for ${emergencyIds.length} emergencies`,
         outcome: 'INFO'
       }]);
-
-      // Extract emergency IDs
-      const emergencyIds = simulationEmergencies.map(e => e.id);
 
       // Add timeline event for batch start
       addTimelineEvent(
         'batch_start',
         'Batch Allocation Started',
-        `Beginning batch allocation for ${simulationEmergencies.length} emergencies`,
+        `Beginning batch allocation for ${emergencyIds.length} emergencies`,
         undefined,
         undefined,
         'INFO'
@@ -397,6 +416,52 @@ export const AllocationSimulation: React.FC = () => {
 
       // Run batch allocation
       const result = await performBatchAllocation(emergencyIds);
+
+      // Create a pending hospital request for each proposed assignment so the
+      // rejection and acceptance scenarios exercise the real reservation flow.
+      for (const assignment of result.results) {
+        let requests = await getEmergencyRequests(assignment.emergency_id);
+        if (assignment.status !== 'ASSIGNED' || assignment.assigned_hospital_id === null) {
+          for (const pendingRequest of requests.filter(request => request.status === 'PENDING')) {
+            await rejectAllocationRequest(pendingRequest.id, 'Request withdrawn because the batch is currently unserved.');
+          }
+          continue;
+        }
+
+        for (const staleRequest of requests.filter(request =>
+          request.status === 'PENDING' && request.hospital_id !== assignment.assigned_hospital_id
+        )) {
+          await rejectAllocationRequest(staleRequest.id, 'Request withdrawn because replanning selected a different hospital.');
+          addTimelineEvent(
+            'request_cancelled',
+            'Previous Request Withdrawn',
+            `Pending request #${staleRequest.id} was withdrawn after conditions changed and the batch selected another hospital.`,
+            assignment.emergency_id,
+            staleRequest.hospital_id,
+            'INFO'
+          );
+        }
+        requests = await getEmergencyRequests(assignment.emergency_id);
+        let matchingRequest = requests.find(request =>
+          request.hospital_id === assignment.assigned_hospital_id &&
+          (request.status === 'PENDING' || request.status === 'ACCEPTED')
+        );
+        if (!matchingRequest) {
+          try {
+            matchingRequest = await createAllocationRequest(assignment.emergency_id, assignment.assigned_hospital_id);
+          } catch (requestError) {
+            // Automation may have accepted a request between planning and this
+            // check. Re-read once before surfacing a genuine request failure.
+            requests = await getEmergencyRequests(assignment.emergency_id);
+            matchingRequest = requests.find(request =>
+              request.hospital_id === assignment.assigned_hospital_id &&
+              (request.status === 'PENDING' || request.status === 'ACCEPTED')
+            );
+            if (!matchingRequest) throw requestError;
+          }
+        }
+        assignment.request_status = matchingRequest?.status === 'ACCEPTED' ? 'ACCEPTED' : 'PENDING';
+      }
       setBatchResults(result);
 
       // Add timeline events for each result
@@ -440,7 +505,7 @@ export const AllocationSimulation: React.FC = () => {
     } finally {
       setIsRunningBatch(false);
     }
-  }, [simulationEmergencies]);
+  }, [simulationEmergencies, addToast, addTimelineEvent]);
 
   // Scenario: Patient Surge
   const handlePatientSurge = useCallback(async () => {
@@ -468,15 +533,27 @@ export const AllocationSimulation: React.FC = () => {
       }
 
       const emergencyId = assignedResult.emergency_id;
-      const hospitalId = assignedResult.assigned_hospital_id!;
+      let hospitalId = assignedResult.assigned_hospital_id!;
 
       // Get the allocation request for this emergency-hospital pair
       const requests = await getEmergencyRequests(emergencyId);
-      const request = requests.find(r => r.hospital_id === hospitalId && r.status === 'PENDING');
+      let request = requests.find(r => r.hospital_id === hospitalId && r.status === 'PENDING');
 
       if (!request) {
-        addToast('warning', 'No Pending Request', 'No pending allocation request found for this emergency-hospital pair');
-        return;
+        // If automation already confirmed this handover, leave it intact and
+        // create a fresh pending request for the rejection demonstration.
+        const currentHospitals = await getHospitals();
+        const candidate = currentHospitals
+          .filter(item => item.status === 'Active')
+          .map(item => ({ hospital: item, resource: item.resources.find(resource => resource.available > 0) }))
+          .find(item => item.resource);
+        if (!candidate?.resource) {
+          addToast('warning', 'No Capacity for Rejection Demo', 'No active hospital has an available resource for a new request.');
+          return;
+        }
+        const [newEmergency] = await createSimulationEmergencies(1, 'HIGH', candidate.resource.resource_type);
+        hospitalId = candidate.hospital.id;
+        request = await createAllocationRequest(newEmergency.id, hospitalId);
       }
 
       // Reject the request
@@ -485,24 +562,21 @@ export const AllocationSimulation: React.FC = () => {
       addTimelineEvent(
         'hospital_rejection',
         'Hospital Rejected Request',
-        `Hospital rejected allocation request for emergency #${emergencyId}`,
-        emergencyId,
+        `Hospital rejected allocation request for emergency #${request.emergency_case_id}`,
+        request.emergency_case_id,
         hospitalId,
         'REJECTED'
       );
 
       addToast('warning', 'Hospital Rejection Simulated',
-        `Hospital rejected allocation request for emergency #${emergencyId}`);
+        `Hospital rejected allocation request for emergency #${request.emergency_case_id}`);
 
-      // Trigger re-batch allocation to show replanning
-      // Wait a moment then run batch allocation again
-      setTimeout(async () => {
-        await runBatchAllocation();
-      }, 1000);
+      // Replan immediately; rejected hospital/emergency pairs are excluded.
+      await runBatchAllocation(request.emergency_case_id === emergencyId ? [] : [request.emergency_case_id]);
     } catch (err) {
       addToast('error', 'Rejection Failed', 'Failed to simulate hospital rejection');
     }
-  }, [batchResults]);
+  }, [batchResults, runBatchAllocation, createSimulationEmergencies, addToast, addTimelineEvent]);
 
   // Scenario: Resource Loss
   const handleResourceLoss = useCallback(async () => {
@@ -566,14 +640,111 @@ export const AllocationSimulation: React.FC = () => {
       addToast('warning', 'Resource Loss Simulated',
         `Simulated loss of ${usedResource.resource_type} at hospital`);
 
-      // Trigger re-batch allocation to show replanning
-      setTimeout(async () => {
-        await runBatchAllocation();
-      }, 1000);
+      await runBatchAllocation();
     } catch (err) {
       addToast('error', 'Resource Loss Failed', 'Failed to simulate resource loss');
     }
-  }, [batchResults, hospitals]);
+  }, [batchResults, hospitals, runBatchAllocation, addTimelineEvent, addToast]);
+
+  // Accept one handover, start travel, then change its hospital's availability.
+  // The accepted patient stays assigned while the remaining batch is replanned.
+  const handleAvailabilityChangeDuringTravel = useCallback(async () => {
+    const assigned = batchResults?.results.find(result =>
+      result.status === 'ASSIGNED' && result.assigned_hospital_id !== null
+    );
+    if (!assigned || assigned.assigned_hospital_id === null) {
+      addToast('warning', 'No Assigned Patients', 'Run batch allocation before simulating an availability change during travel.');
+      return;
+    }
+
+    const emergency = simulationEmergencies.find(item => item.id === assigned.emergency_id);
+    const hospital = hospitals.find(item => item.id === assigned.assigned_hospital_id);
+    const required = emergency?.requirements.find(item => item.required) ?? emergency?.requirements[0];
+    const resource = hospital?.resources.find(item => item.resource_type === required?.resource_type);
+    if (!emergency || !hospital || !required || !resource) {
+      addToast('error', 'Scenario Could Not Start', 'The assigned patient or required hospital resource is no longer available.');
+      return;
+    }
+
+    setIsRunningBatch(true);
+    try {
+      let requests = await getEmergencyRequests(emergency.id);
+      let request = requests.find(item => item.hospital_id === hospital.id && item.status === 'PENDING');
+      if (!request && !requests.some(item => item.hospital_id === hospital.id && item.status === 'ACCEPTED')) {
+        request = await createAllocationRequest(emergency.id, hospital.id);
+      }
+
+      if (request?.status === 'PENDING') {
+        await acceptAllocationRequest(request.id);
+      }
+      await updateEmergencyStatus(emergency.id, 'EN_ROUTE');
+      const refreshedHospital = (await getHospitals()).find(item => item.id === hospital.id);
+      const refreshedResource = refreshedHospital?.resources.find(item => item.resource_type === resource.resource_type);
+      if (!refreshedResource) throw new Error('The hospital resource disappeared during the travel scenario.');
+      await updateHospitalResource(hospital.id, {
+        resource_type: refreshedResource.resource_type,
+        total: refreshedResource.total,
+        available: 0,
+        reserved: refreshedResource.reserved,
+        buffer: refreshedResource.buffer,
+      });
+
+      addTimelineEvent(
+        'resource_loss',
+        'Availability Changed During Travel',
+        `Emergency #${emergency.id} is en route to ${hospital.name}. ${resource.resource_type} availability changed to 0; its confirmed reservation is preserved while the remaining batch is replanned.`,
+        emergency.id,
+        hospital.id,
+        'RESOURCE_LOSS'
+      );
+      setHospitals(await getHospitals());
+      await runBatchAllocation();
+      addToast('success', 'Replanning Complete', 'The en-route handover kept its confirmed reservation; other patients were replanned against current availability.');
+    } catch (err) {
+      setError(parseApiError(err).message);
+      addToast('error', 'Travel Scenario Failed', 'Could not simulate the availability change during travel.');
+    } finally {
+      setIsRunningBatch(false);
+    }
+  }, [batchResults, simulationEmergencies, hospitals, runBatchAllocation, addToast, addTimelineEvent]);
+
+  const handleTravelTimeChange = useCallback(async () => {
+    const assignment = batchResults?.results.find(result =>
+      result.status === 'ASSIGNED' && result.assigned_hospital_id !== null
+    );
+    const hospital = assignment?.assigned_hospital_id === null || assignment?.assigned_hospital_id === undefined
+      ? undefined
+      : hospitals.find(item => item.id === assignment.assigned_hospital_id);
+    if (!assignment || !hospital || hospital.latitude === undefined || hospital.longitude === undefined) {
+      addToast('warning', 'No Routed Patients', 'Run batch allocation with a located hospital before changing travel time.');
+      return;
+    }
+
+    setIsRunningBatch(true);
+    try {
+      // Move the hospital in the simulation map to change its estimated route
+      // distance. The original coordinates are restored by Reset Simulation.
+      const latitude = hospital.latitude + 0.08;
+      const longitude = hospital.longitude + 0.08;
+      await updateHospital(hospital.id, { name: hospital.name, latitude, longitude });
+      addTimelineEvent(
+        'travel_time_change',
+        'Travel Time Changed',
+        `Updated ${hospital.name}'s simulated location while emergency #${assignment.emergency_id} is in the batch. Travel estimates and rankings were recalculated.`,
+        assignment.emergency_id,
+        hospital.id,
+        'INFO'
+      );
+      setHospitals(await getHospitals());
+      await runBatchAllocation();
+      addToast('success', 'Travel Time Replanned', 'The allocator recalculated routes and hospital rankings using the changed travel time.');
+    } catch (err) {
+      setError(parseApiError(err).message);
+      addToast('error', 'Travel Time Scenario Failed', 'Could not update the simulated route and replan.');
+    } finally {
+      setIsRunningBatch(false);
+    }
+  }, [batchResults, hospitals, runBatchAllocation, addToast, addTimelineEvent]);
 
   // Scenario: Insufficient Capacity
   const handleInsufficientCapacity = useCallback(async () => {
@@ -596,7 +767,7 @@ export const AllocationSimulation: React.FC = () => {
       // Create emergencies that exceed capacity by 50%
       const icuNeeded = Math.floor(totalIcuAvailable * 1.5) + 2;
 
-      await createSimulationEmergencies(icuNeeded, 'HIGH'); // All ICU emergencies
+      await createSimulationEmergencies(icuNeeded, 'HIGH', 'ICU_BED');
 
       addToast('info', 'Insufficient Capacity Scenario',
         `Created ${icuNeeded} emergencies requiring ICU beds (available: ${totalIcuAvailable})`);
@@ -621,14 +792,8 @@ export const AllocationSimulation: React.FC = () => {
   const assignedCount = batchResults?.results.filter(r => r.status === 'ASSIGNED').length || 0;
   const unservedCount = batchResults?.results.filter(r => r.status === 'UNSERVED').length || 0;
   const pendingConfirmationCount = batchResults?.results.filter(r =>
-    r.status === 'ASSIGNED' &&
-    r.assigned_hospital_id !== null &&
-    !batchResults?.results.some(r2 =>
-      r2.emergency_id === r.emergency_id &&
-      r2.status === 'ASSIGNED' &&
-      r2.assigned_hospital_id === r.assigned_hospital_id
-    )
-  ).length || 0; // Simplified - in reality we'd check allocation request status
+    r.status === 'ASSIGNED' && r.request_status === 'PENDING'
+  ).length || 0;
 
   // Format timestamp
   const formatTimestamp = (timestamp: string) => {
@@ -651,7 +816,7 @@ export const AllocationSimulation: React.FC = () => {
                 Multi-Patient Allocation & Replanning Simulation
               </h1>
               <p className="text-sm text-slate-400">
-                Demonstrate batch allocation of competing emergency requests and automatic replanning
+                Priority: Critical &gt; High &gt; Moderate &gt; Low. For each patient, choose the highest-scoring feasible hospital using resource fit (45%), travel time (30%), data freshness (15%), and specialization (10%), while respecting remaining capacity.
               </p>
             </div>
           </div>
@@ -720,6 +885,28 @@ export const AllocationSimulation: React.FC = () => {
                 <Activity className="w-4 h-4 mr-2" />
                 Simulate Resource Loss
                 <span className="text-xs">Remove critical resource from hospital</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleAvailabilityChangeDuringTravel}
+                disabled={isLoading || !batchResults || isRunningBatch}
+                className="w-full"
+              >
+                <Truck className="w-4 h-4 mr-2" />
+                Availability Change During Travel
+                <span className="text-xs">Preserve the confirmed handover and replan others</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleTravelTimeChange}
+                disabled={isLoading || !batchResults || isRunningBatch}
+                className="w-full"
+              >
+                <Compass className="w-4 h-4 mr-2" />
+                Change Travel Time & Replan
+                <span className="text-xs">Update a hospital route and rerank the batch</span>
               </Button>
 
               <Button
@@ -852,12 +1039,20 @@ export const AllocationSimulation: React.FC = () => {
                           <td className="px-4 py-3 text-sm text-center">{etaMinutes}</td>
                           <td className="px-4 py-3 text-sm">
                             <span className={`px-2 py-1 rounded
-                              ${result?.status === 'ASSIGNED' ? 'bg-emerald-500 text-white' :
+                              ${result?.status === 'ASSIGNED' && result.request_status === 'ACCEPTED' ? 'bg-emerald-500 text-white' :
+                                result?.status === 'ASSIGNED' && result.request_status === 'PENDING' ? 'bg-amber-500 text-white' :
+                                result?.status === 'ASSIGNED' ? 'bg-blue-500 text-white' :
                                 result?.status === 'UNSERVED' ? 'bg-red-500 text-white' :
                                 result?.status === 'FAILED' ? 'bg-purple-500 text-white' :
                                 result?.status === 'PENDING_MANUAL' ? 'bg-amber-500 text-white' :
                                 'bg-slate-500 text-white'}`}>
-                              {result?.status || 'PENDING'}
+                              {result?.status === 'ASSIGNED'
+                                ? result.request_status === 'ACCEPTED'
+                                  ? 'CONFIRMED'
+                                  : result.request_status === 'PENDING'
+                                    ? 'AWAITING APPROVAL'
+                                    : 'PROPOSED'
+                                : result?.status || 'PENDING'}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-xs max-w-[200px]">

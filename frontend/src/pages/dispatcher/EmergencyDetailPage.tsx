@@ -425,6 +425,18 @@ export const EmergencyDetailPage: React.FC = () => {
               <p className="text-xs text-slate-600">
                 Hospital confirmation received. Select an available Pune ambulance unit to assign to this incident.
               </p>
+              {availableAmbulances.length === 0 && (
+                <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+                  <span>No available units returned. Refresh after the fleet loads or another ambulance is released.</span>
+                  <button
+                    type="button"
+                    onClick={fetchData}
+                    className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 font-semibold hover:bg-amber-100"
+                  >
+                    Refresh ambulances
+                  </button>
+                </div>
+              )}
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <select

@@ -65,6 +65,17 @@ def create_allocation_request(
             detail=f"Hospital '{hospital.name}' is currently inactive"
         )
 
+    # Reuse an open request for the same patient/hospital pair. Batch
+    # automation and the dispatcher simulation can submit the same proposal
+    # close together; creating two pending rows would invite duplicate accepts.
+    existing_pending = db.query(AllocationRequest).filter(
+        AllocationRequest.emergency_case_id == emergency_id,
+        AllocationRequest.hospital_id == hospital_id,
+        AllocationRequest.status == AllocationRequestStatus.PENDING,
+    ).first()
+    if existing_pending:
+        return existing_pending
+
     # Re-verify resource match with CURRENT data
     match_score, eligible, reasons = calculate_resource_match(
         hospital.resources,
@@ -164,6 +175,25 @@ def accept_allocation_request(db: Session, request_id: int) -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Emergency case is already assigned to a hospital"
+        )
+
+    # Claim this emergency atomically before reserving resources. Row-level
+    # resource updates prevent capacity overbooking; this conditional update
+    # also prevents two hospitals from accepting the same emergency at once.
+    claim = db.execute(
+        update(EmergencyCase)
+        .where(
+            EmergencyCase.id == emergency.id,
+            EmergencyCase.status.in_([EmergencyStatus.CREATED, EmergencyStatus.SEARCHING]),
+        )
+        .values(status=EmergencyStatus.HOSPITAL_SELECTED)
+        .execution_options(synchronize_session=False)
+    )
+    if claim.rowcount == 0:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Emergency case is already assigned to a hospital",
         )
 
     # 5. Lock and Atomically Reserve Resources

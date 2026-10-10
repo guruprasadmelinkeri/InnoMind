@@ -12,6 +12,35 @@ from app.websocket import WebSocketEvents, broadcast_event_sync
 def get_all_ambulances(db: Session) -> List[Ambulance]:
     return db.query(Ambulance).all()
 
+
+def ensure_demo_ambulance_fleet(db: Session) -> None:
+    """Add missing demo units without modifying any existing ambulance."""
+    fleet = [
+        ("MH12-PA-1001", 18.5018, 73.8580),
+        ("MH12-RN-2002", 18.5165, 73.8405),
+        ("MH14-AZ-3003", 18.5120, 73.9250),
+        ("MH12-EM-4004", 18.5314, 73.8510),
+    ]
+    existing_numbers = {
+        vehicle_number
+        for (vehicle_number,) in db.query(Ambulance.vehicle_number).filter(
+            Ambulance.vehicle_number.in_([unit[0] for unit in fleet])
+        ).all()
+    }
+    missing = [unit for unit in fleet if unit[0] not in existing_numbers]
+    if not missing:
+        return
+    db.add_all([
+        Ambulance(
+            vehicle_number=vehicle_number,
+            status=AmbulanceStatus.AVAILABLE,
+            current_latitude=latitude,
+            current_longitude=longitude,
+        )
+        for vehicle_number, latitude, longitude in missing
+    ])
+    db.commit()
+
 def get_ambulance_by_id(db: Session, ambulance_id: int) -> Ambulance:
     ambulance = db.query(Ambulance).filter(Ambulance.id == ambulance_id).first()
     if not ambulance:
@@ -308,6 +337,15 @@ def complete_handoff(db: Session, emergency_id: int, received_by: str, notes: Op
     db.refresh(emergency)
     if ambulance:
         db.refresh(ambulance)
+        broadcast_event_sync(
+            WebSocketEvents.AMBULANCE_STATUS_UPDATED,
+            {
+                "ambulance_id": ambulance.id,
+                "vehicle_number": ambulance.vehicle_number,
+                "status": ambulance.status.value,
+                "emergency_id": emergency_id,
+            },
+        )
 
     # Broadcast WebSocket events
     broadcast_event_sync(

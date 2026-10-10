@@ -41,6 +41,7 @@ export interface BatchAllocationResultItem {
   assigned_hospital_id: number | null;
   assigned_hospital_name: string | null;
   explanation: string;
+  request_status?: 'PENDING' | 'ACCEPTED' | null;
   assignment_details: {
     hospital_id: number;
     hospital_name: string;

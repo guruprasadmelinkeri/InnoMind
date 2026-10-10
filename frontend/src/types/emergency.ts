@@ -31,6 +31,7 @@ export interface EmergencyCase {
   pickup_longitude: number;
   status: EmergencyStatus;
   assigned_ambulance_id?: number;
+  assigned_doctor_name?: string | null;
   // Batch allocation fields
   batch_outcome?: string;
   batch_explanation?: string;

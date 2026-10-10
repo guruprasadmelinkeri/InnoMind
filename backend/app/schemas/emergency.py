@@ -44,6 +44,7 @@ class EmergencyCaseResponse(EmergencyCaseBase):
     case_number: str
     status: EmergencyStatus
     assigned_ambulance_id: Optional[int] = None
+    assigned_doctor_name: Optional[str] = None
     # Batch allocation fields
     batch_outcome: Optional[str] = None
     batch_explanation: Optional[str] = None

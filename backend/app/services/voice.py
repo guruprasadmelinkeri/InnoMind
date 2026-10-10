@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 from app.schemas.emergency import EmergencyCaseCreate, EmergencyRequirementCreate
 from app.models.resource import ResourceType
+from app.core.auth import require_roles
+from app.models.account import Account
 
 router = APIRouter()
 
@@ -31,7 +33,8 @@ async def process_voice_request(
     username: str = Form(...),
     latitude: float = Form(...), 
     longitude: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN", "USER")),
 ):
     """
     Unified voice processing endpoint that handles:
@@ -104,6 +107,10 @@ async def process_voice_request(
             ]
         )
         emergency = emergency_service.create_emergency_case(db, emergency_in)
+        if account.role == "USER":
+            emergency.created_by_account_id = account.id
+            db.commit()
+            db.refresh(emergency)
 
         # Step 3: Get hospital recommendations (reuse existing ranking)
         from app.services.allocation import rank_hospitals
