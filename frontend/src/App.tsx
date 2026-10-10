@@ -7,6 +7,7 @@ import { EmergencyDetailPage } from './pages/dispatcher/EmergencyDetailPage';
 import { UserDashboard } from './pages/user/UserDashboard';
 import { HospitalDashboard } from './pages/hospital/HospitalDashboard';
 import { HospitalRequestsPage } from './pages/hospital/HospitalRequestsPage';
+import { AllocationSimulation } from './pages/dispatcher/AllocationSimulation';
 import { getHospitals } from './services/hospitalApi';
 import type { Hospital } from './types/hospital';
 
@@ -43,6 +44,7 @@ export const App: React.FC = () => {
           <Route path="/dispatcher" element={<DispatcherDashboard />} />
           <Route path="/dispatcher/emergency/new" element={<CreateEmergencyPage />} />
           <Route path="/dispatcher/emergency/:id" element={<EmergencyDetailPage />} />
+          <Route path="/dispatcher/allocation-simulation" element={<AllocationSimulation />} />
           <Route path="/user" element={<UserDashboard />} />
           <Route path="/hospital/:hospitalId" element={<HospitalDashboard />} />
           <Route path="/hospital/:hospitalId/requests" element={<HospitalRequestsPage />} />

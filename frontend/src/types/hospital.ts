@@ -27,6 +27,7 @@ export interface Hospital {
   longitude?: number;
   emergency_level?: string;
   trauma_center: boolean;
+  automatic_resource_allocation: boolean;
   status: string;
   created_at: string;
   updated_at: string;
@@ -40,5 +41,6 @@ export interface HospitalCreate {
   longitude?: number;
   emergency_level?: string;
   trauma_center?: boolean;
+  automatic_resource_allocation?: boolean;
   status?: string;
 }

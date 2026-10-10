@@ -31,6 +31,9 @@ export interface EmergencyCase {
   pickup_longitude: number;
   status: EmergencyStatus;
   assigned_ambulance_id?: number;
+  // Batch allocation fields
+  batch_outcome?: string;
+  batch_explanation?: string;
   created_at: string;
   updated_at: string;
   requirements: EmergencyRequirement[];

@@ -160,6 +160,7 @@ export const DispatcherDashboard: React.FC = () => {
   // Listen to Real-Time WebSocket Events
   useWebSocket(
     [
+      'AUTOMATION_INTERVENTION_REQUIRED',
       'RESOURCE_UPDATED',
       'ALLOCATION_REQUEST_ACCEPTED',
       'ALLOCATION_REQUEST_REJECTED',
@@ -200,10 +201,12 @@ export const DispatcherDashboard: React.FC = () => {
         fetchData(false);
       } else if (payload.event === 'EMERGENCY_STATUS_UPDATED' && payload.data) {
         const updatedEmergencyId = Number(payload.data.emergency_id);
+        setSelectedEmergencyId((current) => current ?? updatedEmergencyId);
+        void fetchData(false);
+
         setEmergencies((prev) => {
           const doesExist = prev.some((e) => e.id === updatedEmergencyId);
           if (!doesExist) {
-            fetchData(false);
             return prev;
           }
 
@@ -211,6 +214,13 @@ export const DispatcherDashboard: React.FC = () => {
             e.id === updatedEmergencyId ? { ...e, status: payload.data.status } : e
           );
         });
+      } else if (payload.event === 'AUTOMATION_INTERVENTION_REQUIRED' && payload.data) {
+        addToast(
+          'warning',
+          'Manual Dispatcher Action Required',
+          payload.data.message || 'Automation hit an exception and requires dispatcher override.'
+        );
+        fetchData(false);
       }
     }
   );
@@ -592,6 +602,7 @@ export const DispatcherDashboard: React.FC = () => {
                       <th className="p-3.5">Severity</th>
                       <th className="p-3.5">Patient</th>
                       <th className="p-3.5">Requirements</th>
+                      <th className="p-3.5">Batch Outcome</th>
                       <th className="p-3.5">Status</th>
                       <th className="p-3.5 text-right">Actions</th>
                     </tr>
@@ -600,7 +611,7 @@ export const DispatcherDashboard: React.FC = () => {
                     {emergencies.map((e) => {
                       const isCurrent = e.id === selectedEmergencyId;
                       return (
-                        <tr
+                                            <tr
                           key={e.id}
                           className={`hover:bg-slate-50 transition-colors ${
                             isCurrent ? 'bg-teal-50/40' : ''
@@ -626,6 +637,20 @@ export const DispatcherDashboard: React.FC = () => {
                                 </span>
                               ))}
                             </div>
+                          </td>
+                          <td className="p-3.5">
+                            {e.batch_outcome ? (
+                              <>
+                                <span className="font-medium text-slate-700">{e.batch_outcome}</span>
+                                {e.batch_explanation && (
+                                  <span className="ml-1 text-xs text-slate-400" title={e.batch_explanation}>
+                                    (?)
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
                           </td>
                           <td className="p-3.5">
                             <StatusBadge status={e.status} />

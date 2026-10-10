@@ -1,7 +1,9 @@
 import { apiClient } from './api';
 import type { AllocationRequest, AcceptSuccessResponse } from '../types/reservation';
 
-export const acceptAllocationRequest = async (requestId: number): Promise<AcceptSuccessResponse> => {
+export const acceptAllocationRequest = async (
+  requestId: number
+): Promise<AcceptSuccessResponse> => {
   const response = await apiClient.post<AcceptSuccessResponse>(`/allocation-requests/${requestId}/accept`);
   return response.data;
 };
@@ -16,7 +18,16 @@ export const rejectAllocationRequest = async (
   return response.data;
 };
 
-export const getAllocationRequestById = async (requestId: number): Promise<AllocationRequest> => {
+export const getAllocationRequestById = async (
+  requestId: number
+): Promise<AllocationRequest> => {
   const response = await apiClient.get<AllocationRequest>(`/allocation-requests/${requestId}`);
+  return response.data;
+};
+
+export const getAllocationRequestsForEmergency = async (
+  emergencyId: number
+): Promise<AllocationRequest[]> => {
+  const response = await apiClient.get<AllocationRequest[]>(`/emergencies/${emergencyId}/requests`);
   return response.data;
 };

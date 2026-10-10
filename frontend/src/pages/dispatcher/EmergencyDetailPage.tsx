@@ -10,8 +10,9 @@ import {
   Truck,
   CheckCircle,
   Navigation,
+  Bot,
 } from 'lucide-react';
-import { getEmergencyById } from '../../services/emergencyApi';
+import { getEmergencyById, retryEmergencyAutomation } from '../../services/emergencyApi';
 import { getRecommendations, createAllocationRequest, getEmergencyRequests } from '../../services/allocationApi';
 import { getAmbulances, assignAmbulance, updateAmbulanceStatus } from '../../services/ambulanceApi';
 import { getHospitals } from '../../services/hospitalApi';
@@ -59,6 +60,7 @@ export const EmergencyDetailPage: React.FC = () => {
   const [submittingHospitalId, setSubmittingHospitalId] = useState<number | null>(null);
   const [assigningAmbulance, setAssigningAmbulance] = useState(false);
   const [updatingAmbulanceStatus, setUpdatingAmbulanceStatus] = useState(false);
+  const [retryingAutomation, setRetryingAutomation] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -204,6 +206,21 @@ export const EmergencyDetailPage: React.FC = () => {
       addToast('error', 'Status Update Failed', parsed.message);
     } finally {
       setUpdatingAmbulanceStatus(false);
+    }
+  };
+
+  const handleRetryAutomation = async () => {
+    if (!emergencyId) return;
+    setRetryingAutomation(true);
+    try {
+      await retryEmergencyAutomation(emergencyId);
+      addToast('info', 'Automation Retry Triggered', 'Automatic allocation workflow has been restarted.');
+      fetchData();
+    } catch (err) {
+      const parsed = parseApiError(err);
+      addToast('error', 'Automation Retry Failed', parsed.message);
+    } finally {
+      setRetryingAutomation(false);
     }
   };
 
@@ -363,6 +380,22 @@ export const EmergencyDetailPage: React.FC = () => {
             ) : (
               <>
                 <Compass className="w-4 h-4" /> FIND RECOMMENDED HOSPITALS
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleRetryAutomation}
+            disabled={retryingAutomation}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+          >
+            {retryingAutomation ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Retrying...
+              </>
+            ) : (
+              <>
+                <Bot className="w-4 h-4" /> RETRY AUTOMATION
               </>
             )}
           </button>

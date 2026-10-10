@@ -64,7 +64,10 @@ class AllocationRequest(Base):
     )
 
     # Relationships
-    emergency_case: Mapped["EmergencyCase"] = relationship("EmergencyCase")
+    emergency_case: Mapped["EmergencyCase"] = relationship(
+        "EmergencyCase",
+        back_populates="allocation_requests"
+    )
     hospital: Mapped["Hospital"] = relationship("Hospital")
 
     def __repr__(self) -> str:

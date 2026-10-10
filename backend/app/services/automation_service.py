@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from threading import Timer
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -14,21 +14,145 @@ from app.models.allocation_request import AllocationRequest, AllocationRequestSt
 from app.models.emergency import EmergencyCase, EmergencyStatus
 from app.models.hospital import Hospital
 from app.services.allocation import rank_hospitals
+from app.services.allocation.batch_allocation_service import batch_allocate
 from app.services import ambulance_service
+from app.services.reservation import create_allocation_request, accept_allocation_request
 from app.websocket import WebSocketEvents, broadcast_event_sync
 
 
+# Debounce timer for batch automation
+_batch_timer: Optional[Timer] = None
+_batch_emergency_ids: Set[int] = set()
+_batch_timer_lock = False  # Simple reentrancy guard
+
+
 def schedule_automated_workflow(emergency_id: int) -> None:
-    def _runner() -> None:
+    """
+    Schedule batch automation workflow with debounce.
+    When an emergency is created, we wait a short window to see if more emergencies arrive,
+    then process all pending emergencies together.
+    """
+    global _batch_timer, _batch_emergency_ids
+
+    # Add emergency to the set
+    _batch_emergency_ids.add(emergency_id)
+
+    # Cancel existing timer if any
+    if _batch_timer is not None:
+        _batch_timer.cancel()
+
+    # Start new timer
+    delay_seconds = 5.0  # Wait 5 seconds for more emergencies
+    _batch_timer = Timer(delay_seconds, _run_batch_workflow)
+    _batch_timer.daemon = True
+    _batch_timer.start()
+
+
+def _run_batch_workflow() -> None:
+    """
+    Run batch allocation for all pending emergencies collected during debounce window.
+    """
+    global _batch_timer, _batch_emergency_ids, _batch_timer_lock
+
+    # Prevent reentrancy
+    if _batch_timer_lock:
+        return
+    _batch_timer_lock = True
+
+    try:
         db = SessionLocal()
         try:
-            run_automated_emergency_workflow(db, emergency_id)
+            # Collect emergencies that are still pending (CREATED or SEARCHING) and have no accepted allocation request
+            pending_emergencies = (
+                db.query(EmergencyCase)
+                .filter(
+                    EmergencyCase.status.in_([EmergencyStatus.CREATED, EmergencyStatus.SEARCHING]),
+                    ~EmergencyCase.allocation_requests.any(
+                        AllocationRequest.status == AllocationRequestStatus.ACCEPTED
+                    ),
+                )
+                .all()
+            )
+
+            if not pending_emergencies:
+                return
+
+            emergency_ids = [e.id for e in pending_emergencies]
+            print(f"[BATCH AUTOMATION] Processing {len(pending_emergencies)} emergencies: {emergency_ids}")
+
+            # Run batch allocation
+            batch_result = batch_allocate(db, emergency_ids)
+            print(f"[BATCH AUTOMATION] Batch result: {batch_result}")
+            results = batch_result.get("results", [])
+
+            # Process each result
+            for res in results:
+                eid = res["emergency_id"]
+                emergency = db.query(EmergencyCase).filter(EmergencyCase.id == eid).first()
+                if not emergency:
+                    continue
+
+                # Update batch outcome fields
+                emergency.batch_outcome = res["status"]  # ASSIGNED or UNSERVED
+                emergency.batch_explanation = res["explanation"]
+                print(f"[BATCH AUTOMATION] Emergency {eid}: outcome={emergency.batch_outcome}, explanation={emergency.batch_explanation}")
+
+                if res["status"] == "ASSIGNED":
+                    hospital_id = res["assigned_hospital_id"]
+                    hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
+                    if not hospital:
+                        continue
+
+                    # Create allocation request
+                    try:
+                        request = create_allocation_request(db, emergency.id, hospital_id)
+                    except HTTPException as exc:
+                        # If creation fails, mark as failed and leave for manual intervention
+                        emergency.batch_outcome = "FAILED"
+                        emergency.batch_explanation = f"Failed to create allocation request: {exc.detail}"
+                        print(f"[BATCH AUTOMATION] Emergency {eid}: creation failed: {exc.detail}")
+                        continue
+
+                    # If hospital requires manual approval, do not auto-accept
+                    if not hospital.automatic_resource_allocation:
+                        # Leave request as PENDING; emergency stays in SEARCHING (or we could set a custom status)
+                        # We'll keep batch_outcome as ASSIGNED? Actually we have not secured resources yet.
+                        # Better to keep batch_outcome as PENDING_MANUAL and leave emergency in SEARCHING.
+                        emergency.batch_outcome = "PENDING_MANUAL"
+                        emergency.batch_explanation = (
+                            f"Allocation request created for Hospital {hospital.name} awaiting manual approval."
+                        )
+                        # Broadcast allocation request created event (already done in create_allocation_request)
+                        print(f"[BATCH AUTOMATION] Emergency {eid}: hospital requires manual approval")
+                        continue
+
+                    # Hospital auto-accepts: accept the request to reserve resources
+                    try:
+                        accept_allocation_request(db, request.id)
+                    except HTTPException as exc:
+                        # If acceptance fails, mark as failed
+                        emergency.batch_outcome = "FAILED"
+                        emergency.batch_explanation = f"Failed to accept allocation request: {exc.detail}"
+                        print(f"[BATCH AUTOMATION] Emergency {eid}: acceptance failed: {exc.detail}")
+                        # The request remains PENDING? Actually accept_allocation_request would have raised and not changed status.
+                        # We'll leave request as PENDING for manual intervention.
+                        continue
+                    # If acceptance succeeded, events are broadcast inside accept_allocation_request
+                    print(f"[BATCH AUTOMATION] Emergency {eid}: allocated to hospital {hospital_id} and accepted")
+
+                # For UNSERVED or FAILED or PENDING_MANUAL, we leave emergency in SEARCHING status
+                # (dispatcher can intervene). No status change needed.
+
+            db.commit()
+            print("[BATCH AUTOMATION] Database commit completed")
         finally:
             db.close()
-
-    timer = Timer(0, _runner)
-    timer.daemon = True
-    timer.start()
+    finally:
+        # Reset batch state
+        _batch_timer = None
+        _batch_emergency_ids.clear()
+        _batch_timer_lock = False
+        print("[BATCH AUTOMATION] Batch workflow finished, state reset")
 
 
 def _emit_intervention_required(
@@ -169,97 +293,14 @@ def _cancel_request_after_auto_failure(
 
 
 def run_automated_emergency_workflow(db: Session, emergency_id: int) -> Dict[str, Any]:
-    from app.services.reservation import create_allocation_request, accept_allocation_request
-
-    emergency = db.query(EmergencyCase).filter(EmergencyCase.id == emergency_id).first()
-    if not emergency:
-        raise HTTPException(status_code=404, detail=f"Emergency case with id {emergency_id} not found")
-
-    if emergency.status in [EmergencyStatus.CANCELLED, EmergencyStatus.HANDOFF_COMPLETED]:
-        return {
-            "status": "skipped",
-            "reason": "terminal_emergency_state",
-            "emergency_status": emergency.status.value,
-        }
-
-    _mark_searching(db, emergency)
-
-    ranking = rank_hospitals(db, emergency_id)
-    recommendations: List[Dict[str, Any]] = ranking.get("recommendations", [])
-    if not recommendations:
-        _emit_intervention_required(
-            emergency,
-            reason="NO_ELIGIBLE_HOSPITAL",
-            message="No eligible hospital found. Dispatcher override is required.",
-        )
-        return {
-            "status": "manual_intervention_required",
-            "reason": "NO_ELIGIBLE_HOSPITAL",
-        }
-
-    attempted_hospitals: List[int] = []
-    pending_manual_request_id: Optional[int] = None
-
-    for recommendation in recommendations:
-        hospital_id = int(recommendation["hospital_id"])
-        hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
-        if not hospital or hospital.status != "Active":
-            continue
-
-        attempted_hospitals.append(hospital_id)
-
-        try:
-            request = create_allocation_request(db, emergency.id, hospital_id)
-        except HTTPException:
-            continue
-
-        if not hospital.automatic_resource_allocation:
-            pending_manual_request_id = request.id
-            _emit_intervention_required(
-                emergency,
-                reason="HOSPITAL_MANUAL_APPROVAL_REQUIRED",
-                message=(
-                    f"Hospital '{hospital.name}' requires manual approval. "
-                    "Waiting for hospital acceptance/rejection."
-                ),
-                details={"hospital_id": hospital.id, "request_id": request.id},
-            )
-            break
-
-        try:
-            accept_allocation_request(db, request.id)
-        except HTTPException as exc:
-            _cancel_request_after_auto_failure(
-                db,
-                request,
-                reason=f"AUTO_ACCEPT_FAILED: {exc.detail}",
-            )
-            continue
-
-        ambulance_result = auto_assign_ambulance_for_emergency(db, emergency.id)
-        return {
-            "status": "completed",
-            "hospital_id": hospital.id,
-            "request_id": request.id,
-            "ambulance": ambulance_result,
-        }
-
-    if pending_manual_request_id:
-        return {
-            "status": "waiting_hospital_manual_approval",
-            "request_id": pending_manual_request_id,
-            "attempted_hospitals": attempted_hospitals,
-        }
-
-    _emit_intervention_required(
-        emergency,
-        reason="AUTO_ALLOCATION_FAILED",
-        message="Automated allocation could not complete. Dispatcher override is required.",
-        details={"attempted_hospitals": attempted_hospitals},
-    )
-
+    """
+    Kept for backward compatibility (e.g., manual retry endpoint).
+    Now delegates to batch workflow for single emergency (will still work via debounce).
+    """
+    # For single emergency, we still schedule the batch workflow (which may include other emergencies).
+    schedule_automated_workflow(emergency_id)
+    # Return immediate status; actual processing happens later.
     return {
-        "status": "manual_intervention_required",
-        "reason": "AUTO_ALLOCATION_FAILED",
-        "attempted_hospitals": attempted_hospitals,
+        "status": "scheduled",
+        "reason": "batch_debounce_scheduled",
     }

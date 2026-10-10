@@ -15,15 +15,19 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
-import { PUNE_PRESETS } from '../../components/map/PuneMap';
+import { PUNE_PRESETS, PuneMap, type EmergencyPoint } from '../../components/map/PuneMap';
 import { StatusBadge } from '../../components/emergencies/StatusBadge';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { parseApiError } from '../../services/api';
 import { createEmergency, getEmergencies } from '../../services/emergencyApi';
 import { getRecommendations } from '../../services/allocationApi';
+import { getHospitals } from '../../services/hospitalApi';
+import { AmbulanceSimulationEngine, type AmbulanceSimulationSnapshot } from '../../services/ambulanceSimulation';
+import { calculateHaversineDistanceKm, type RouteResult } from '../../services/routingService';
 import type { RecommendationResponse } from '../../types/allocation';
+import type { Ambulance } from '../../types/ambulance';
 import type { EmergencyCase, EmergencyCaseCreate, EmergencyRequirementCreate, EmergencySeverity } from '../../types/emergency';
-import type { ResourceType } from '../../types/hospital';
+import type { Hospital, ResourceType } from '../../types/hospital';
 import { analyzeEmergencyDescription } from '../../services/aiApi';
 import type { EmergencyAnalyzeResponse } from '../../services/aiApi';
 
@@ -88,11 +92,15 @@ export const UserDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeEmergency, setActiveEmergency] = useState<EmergencyCase | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [liveRouteInfo, setLiveRouteInfo] = useState<RouteResult | null>(null);
+  const [userSimulation, setUserSimulation] = useState<AmbulanceSimulationSnapshot | null>(null);
   const [loadingRecent, setLoadingRecent] = useState(true);
 
   const miniMapRef = useRef<HTMLDivElement>(null);
   const miniMapInstance = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const userSimulationRef = useRef<AmbulanceSimulationEngine | null>(null);
 
   const loadRecommendations = useCallback(async (emergencyId: number) => {
     try {
@@ -147,8 +155,10 @@ export const UserDashboard: React.FC = () => {
   useEffect(() => {
     const fetchRecent = async () => {
       try {
-        const list = await getEmergencies();
-        const sorted = [...list].sort(
+        const [emergencyList, hospitalList] = await Promise.all([getEmergencies(), getHospitals()]);
+        setHospitals(hospitalList);
+
+        const sorted = [...emergencyList].sort(
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
         const latest = sorted[0] || null;
@@ -166,8 +176,21 @@ export const UserDashboard: React.FC = () => {
     void fetchRecent();
   }, [loadRecommendations]);
 
-  useWebSocket(['EMERGENCY_STATUS_UPDATED'], (payload) => {
+  useWebSocket(['EMERGENCY_STATUS_UPDATED', 'AUTOMATION_INTERVENTION_REQUIRED'], (payload) => {
     if (!payload.data) return;
+
+    if (payload.event === 'AUTOMATION_INTERVENTION_REQUIRED') {
+      if (!activeEmergency || Number(payload.data.emergency_id) !== activeEmergency.id) {
+        return;
+      }
+      addToast(
+        'warning',
+        'Dispatcher Reviewing Your Case',
+        payload.data.message || 'Your request needs manual coordination. The dispatch team has been notified.'
+      );
+      return;
+    }
+
     const emergencyId = Number(payload.data.emergency_id);
     if (!activeEmergency || emergencyId !== activeEmergency.id) {
       return;
@@ -182,8 +205,117 @@ export const UserDashboard: React.FC = () => {
     [recommendations]
   );
 
+  const selectedHospital = useMemo(
+    () => hospitals.find((hospital) => hospital.id === topRecommendation?.hospital_id) ?? null,
+    [hospitals, topRecommendation]
+  );
+
+  const liveEmergencyPoint = useMemo<EmergencyPoint | null>(() => {
+    if (!activeEmergency) return null;
+    const lat = Number(activeEmergency.pickup_latitude);
+    const lon = Number(activeEmergency.pickup_longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return {
+      latitude: lat,
+      longitude: lon,
+      label: `${activeEmergency.case_number} · ${activeEmergency.severity}`,
+      caseNumber: activeEmergency.case_number,
+    };
+  }, [activeEmergency]);
+
   const workflowProgress = activeEmergency ? getWorkflowProgress(activeEmergency.status) : 0;
   const workflowIndex = activeEmergency ? STATUS_SEQUENCE.indexOf(activeEmergency.status as (typeof STATUS_SEQUENCE)[number]) : -1;
+
+  const formatDuration = (totalSeconds: number) => {
+    const safeSeconds = Math.max(0, Math.round(totalSeconds));
+    const minutes = Math.floor(safeSeconds / 60);
+    const seconds = safeSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (!activeEmergency || !selectedHospital) {
+      userSimulationRef.current = null;
+      setUserSimulation(null);
+      return;
+    }
+
+    const origin: [number, number] = [Number(activeEmergency.pickup_latitude), Number(activeEmergency.pickup_longitude)];
+    const destination: [number, number] = [Number(selectedHospital.latitude), Number(selectedHospital.longitude)];
+
+    if (!origin[0] || !origin[1] || !destination[0] || !destination[1]) {
+      userSimulationRef.current = null;
+      setUserSimulation(null);
+      return;
+    }
+
+    const routeCoordinates: [number, number][] =
+      liveRouteInfo && liveRouteInfo.coordinates.length > 1
+        ? liveRouteInfo.coordinates.map(([lat, lon]) => [Number(lat), Number(lon)] as [number, number])
+        : [origin, destination];
+
+    const engine = new AmbulanceSimulationEngine({
+      ambulanceId: 99999,
+      origin,
+      destination,
+      route: routeCoordinates,
+      totalDistanceKm:
+        liveRouteInfo?.distanceKm ??
+        calculateHaversineDistanceKm(
+          Number(activeEmergency.pickup_latitude),
+          Number(activeEmergency.pickup_longitude),
+          Number(selectedHospital.latitude),
+          Number(selectedHospital.longitude)
+        ),
+      totalEtaSeconds: Math.max(30, (liveRouteInfo?.durationMinutes ?? 9) * 60),
+      speedMultiplier: 12,
+      updateIntervalMs: 220,
+    });
+
+    userSimulationRef.current = engine;
+    const shouldRun = ['HOSPITAL_SELECTED', 'EN_ROUTE', 'ARRIVED', 'HANDOFF_COMPLETED'].includes(activeEmergency.status);
+    if (shouldRun) {
+      const startedSnapshot = engine.start();
+      setUserSimulation(startedSnapshot);
+    } else {
+      const resetSnapshot = engine.reset();
+      setUserSimulation(resetSnapshot);
+    }
+  }, [activeEmergency, selectedHospital, liveRouteInfo]);
+
+  useEffect(() => {
+    const engine = userSimulationRef.current;
+    if (!engine || !activeEmergency) return;
+
+    const shouldRun = ['HOSPITAL_SELECTED', 'EN_ROUTE', 'ARRIVED', 'HANDOFF_COMPLETED'].includes(activeEmergency.status);
+    if (!shouldRun) return;
+
+    const intervalId = window.setInterval(() => {
+      const next = engine.tick();
+      setUserSimulation(next);
+    }, engine.updateInterval);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeEmergency?.status]);
+
+  const liveAmbulance = useMemo<Ambulance[]>(() => {
+    if (!userSimulation || !selectedHospital) return [];
+
+    const status: Ambulance['status'] =
+      userSimulation.status === 'IDLE' ? 'AVAILABLE' : userSimulation.status === 'ARRIVED' ? 'ARRIVED' : 'EN_ROUTE';
+
+    return [
+      {
+        id: userSimulation.ambulanceId,
+        vehicle_number: 'MediRoute-01',
+        status,
+        current_latitude: userSimulation.currentLatitude,
+        current_longitude: userSimulation.currentLongitude,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+  }, [selectedHospital, userSimulation]);
 
   const handleUseDemoText = () => {
     setAiInput(DEMO_EMERGENCY_TEXT);
@@ -775,6 +907,63 @@ export const UserDashboard: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {activeEmergency && selectedHospital && liveEmergencyPoint && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">Live ambulance simulation</h3>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {userSimulation?.status ?? 'IDLE'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4 text-xs">
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">ETA</div>
+                  <div className="font-bold text-slate-800">{formatDuration(userSimulation?.etaSecondsRemaining ?? 0)}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Distance left</div>
+                  <div className="font-bold text-slate-800">{userSimulation ? `${userSimulation.distanceRemainingKm.toFixed(1)} km` : '0.0 km'}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Progress</div>
+                  <div className="font-bold text-slate-800">{userSimulation ? `${Math.round(userSimulation.progress * 100)}%` : '0%'}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Destination</div>
+                  <div className="font-bold text-slate-800 truncate">{selectedHospital.name}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
+                  <span>Route progress</span>
+                  <span>{userSimulation ? `${Math.round(userSimulation.progress * 100)}%` : '0%'}</span>
+                </div>
+                <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-500 transition-all duration-300"
+                    style={{ width: `${userSimulation ? Math.min(100, Math.max(0, userSimulation.progress * 100)) : 0}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <PuneMap
+                  hospitals={hospitals}
+                  emergencyPoint={liveEmergencyPoint}
+                  ambulances={liveAmbulance}
+                  ambulanceSimulation={userSimulation}
+                  selectedHospitalId={selectedHospital.id}
+                  onSelectHospital={() => undefined}
+                  onRouteInfoChange={setLiveRouteInfo}
+                  recommendations={recommendations?.recommendations ?? []}
+                  height="260px"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Dispatch notes</h3>

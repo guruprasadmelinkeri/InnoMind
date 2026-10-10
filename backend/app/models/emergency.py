@@ -50,6 +50,9 @@ class EmergencyCase(Base):
         nullable=True,
         index=True
     )
+    # Batch allocation fields
+    batch_outcome: Mapped[Optional[str]] = mapped_column(String(), nullable=True)
+    batch_explanation: Mapped[Optional[str]] = mapped_column(String(), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -73,6 +76,12 @@ class EmergencyCase(Base):
     assigned_ambulance: Mapped[Optional["Ambulance"]] = relationship(
         "Ambulance",
         lazy="joined"
+    )
+    allocation_requests: Mapped[List["AllocationRequest"]] = relationship(
+        "AllocationRequest",
+        back_populates="emergency_case",
+        cascade="all, delete-orphan",
+        lazy="selectin"
     )
 
     __table_args__ = (

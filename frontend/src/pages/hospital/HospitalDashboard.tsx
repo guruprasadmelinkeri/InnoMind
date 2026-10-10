@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import type { Hospital, HospitalResource } from '../../types/hospital';
-import { getHospitalById, getHospitalResources, updateHospitalResource } from '../../services/hospitalApi';
+import { getHospitalById, getHospitalResources, updateHospital, updateHospitalResource } from '../../services/hospitalApi';
 import { ResourceCard } from '../../components/hospitals/ResourceCard';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
@@ -40,6 +40,7 @@ export const HospitalDashboard: React.FC = () => {
   const [editAvailable, setEditAvailable] = useState<number>(0);
   const [editBuffer, setEditBuffer] = useState<number>(0);
   const [savingResource, setSavingResource] = useState(false);
+  const [updatingAutoAllocation, setUpdatingAutoAllocation] = useState(false);
 
   const fetchData = useCallback(async (showRefreshing = false) => {
     if (!id || isNaN(id)) {
@@ -136,6 +137,25 @@ export const HospitalDashboard: React.FC = () => {
     }
   };
 
+  const handleToggleAutoAllocation = async () => {
+    if (!hospital) return;
+    setUpdatingAutoAllocation(true);
+    try {
+      const updated = await updateHospital(hospital.id, {
+        automatic_resource_allocation: !hospital.automatic_resource_allocation,
+      });
+      setHospital(updated);
+      addToast(
+        'success',
+        `Automatic allocation ${updated.automatic_resource_allocation ? 'enabled' : 'disabled'}.`
+      );
+    } catch (err: any) {
+      addToast('error', err?.response?.data?.detail || 'Failed to update automatic allocation setting.');
+    } finally {
+      setUpdatingAutoAllocation(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="py-20 flex flex-col items-center justify-center">
@@ -213,6 +233,23 @@ export const HospitalDashboard: React.FC = () => {
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
               Refresh Status
+            </button>
+            <button
+              onClick={handleToggleAutoAllocation}
+              disabled={updatingAutoAllocation}
+              className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all disabled:opacity-50 ${
+                hospital.automatic_resource_allocation
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+            >
+              {updatingAutoAllocation ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating...
+                </span>
+              ) : (
+                `Automatic Allocation: ${hospital.automatic_resource_allocation ? 'ON' : 'OFF'}`
+              )}
             </button>
             <Link
               to={`/hospital/${hospital.id}/requests`}

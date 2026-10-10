@@ -24,6 +24,11 @@ export const updateEmergencyStatus = async (
   return response.data;
 };
 
+export const retryEmergencyAutomation = async (emergencyId: number): Promise<{ status: string }> => {
+  const response = await apiClient.post<{ status: string }>(`/emergencies/${emergencyId}/automation/retry`);
+  return response.data;
+};
+
 export const deleteEmergency = async (emergencyId: number): Promise<void> => {
   await apiClient.delete(`/emergencies/${emergencyId}`);
 };
