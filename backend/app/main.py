@@ -12,16 +12,17 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket import manager
 
 # Include API Router
-app.include_router(api_router)
+app.include_router(api_router, prefix="/api")
 app.include_router(voice.router, prefix="/voice")
 
 @app.websocket("/ws")

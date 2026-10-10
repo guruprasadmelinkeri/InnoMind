@@ -8,12 +8,13 @@ class ResourceBase(BaseModel):
     total: int = Field(default=0, ge=0, description="Total capacity of this resource type")
     available: int = Field(default=0, ge=0, description="Currently available count")
     reserved: int = Field(default=0, ge=0, description="Currently reserved count")
+    buffer: int = Field(default=0, ge=0, description="Buffer capacity (not allocatable)")
 
     @model_validator(mode="after")
-    def validate_available_reserved_total(self):
-        if self.available + self.reserved > self.total:
+    def validate_available_reserved_buffer_total(self):
+        if self.available + self.reserved + self.buffer > self.total:
             raise ValueError(
-                f"Available ({self.available}) + Reserved ({self.reserved}) cannot exceed Total ({self.total})"
+                f"Available ({self.available}) + Reserved ({self.reserved}) + Buffer ({self.buffer}) cannot exceed Total ({self.total})"
             )
         return self
 
@@ -24,6 +25,7 @@ class ResourceUpdate(BaseModel):
     total: Optional[int] = Field(default=None, ge=0)
     available: Optional[int] = Field(default=None, ge=0)
     reserved: Optional[int] = Field(default=None, ge=0)
+    buffer: Optional[int] = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_totals_if_present(self):

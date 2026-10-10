@@ -219,6 +219,8 @@ export const SimulationLab: React.FC = () => {
         resource_type: targetRes.resource_type,
         total: targetRes.total,
         available: 0,
+        reserved: targetRes.reserved,
+        buffer: targetRes.buffer,
       });
 
       // Recalculate recommendations
@@ -366,7 +368,9 @@ export const SimulationLab: React.FC = () => {
             await updateHospitalResource(h.id, {
               resource_type: r.resource_type,
               total: r.total,
-              available: Math.max(2, r.total - r.reserved),
+              available: Math.max(2, r.total - r.buffer - r.reserved),
+              reserved: r.reserved,
+              buffer: r.buffer,
             });
           }
         }

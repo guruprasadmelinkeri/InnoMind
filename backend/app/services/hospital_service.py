@@ -73,12 +73,12 @@ def add_or_update_hospital_resource(
             detail=f"Hospital with id {hospital_id} not found"
         )
 
-    # Check if available + reserved <= total
-    if resource_in.available + resource_in.reserved > resource_in.total:
+    # Check if available + reserved + buffer <= total
+    if resource_in.available + resource_in.reserved + resource_in.buffer > resource_in.total:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Available ({resource_in.available}) + Reserved ({resource_in.reserved}) "
+                f"Available ({resource_in.available}) + Reserved ({resource_in.reserved}) + Buffer ({resource_in.buffer}) "
                 f"cannot exceed Total ({resource_in.total})"
             )
         )
@@ -97,6 +97,7 @@ def add_or_update_hospital_resource(
         existing_resource.total = resource_in.total
         existing_resource.available = resource_in.available
         existing_resource.reserved = resource_in.reserved
+        existing_resource.buffer = resource_in.buffer
         db.commit()
         db.refresh(existing_resource)
 
@@ -109,6 +110,7 @@ def add_or_update_hospital_resource(
                 "total": existing_resource.total,
                 "available": existing_resource.available,
                 "reserved": existing_resource.reserved,
+                "buffer": existing_resource.buffer,
                 "last_updated": existing_resource.last_updated.isoformat() if existing_resource.last_updated else None
             }
         )
@@ -122,6 +124,7 @@ def add_or_update_hospital_resource(
         total=resource_in.total,
         available=resource_in.available,
         reserved=resource_in.reserved,
+        buffer=resource_in.buffer,
     )
     db.add(resource)
     db.commit()
@@ -136,6 +139,7 @@ def add_or_update_hospital_resource(
             "total": resource.total,
             "available": resource.available,
             "reserved": resource.reserved,
+            "buffer": resource.buffer,
             "last_updated": resource.last_updated.isoformat() if resource.last_updated else None
         }
     )

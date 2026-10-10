@@ -169,13 +169,13 @@ export const DispatcherDashboard: React.FC = () => {
     ],
     (payload) => {
       if (payload.event === 'RESOURCE_UPDATED' && payload.data) {
-        const { hospital_id, resource_id, resource_type, available, reserved, total } = payload.data;
+        const { hospital_id, resource_id, resource_type, available, reserved, total, buffer } = payload.data;
         setHospitals((prev) =>
           prev.map((h) => {
             if (h.id === hospital_id && h.resources) {
               const updatedResources = h.resources.map((r) =>
                 r.id === resource_id || r.resource_type === resource_type
-                  ? { ...r, available, reserved, total }
+                  ? { ...r, available, reserved, total, buffer }
                   : r
               );
               return { ...h, resources: updatedResources };

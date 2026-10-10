@@ -30,7 +30,7 @@ export const getHospitalResources = async (hospitalId: number): Promise<Hospital
 
 export const updateHospitalResource = async (
   hospitalId: number,
-  resourceData: { resource_type: string; total: number; available: number }
+  resourceData: { resource_type: string; total: number; available: number; reserved: number; buffer: number }
 ): Promise<HospitalResource> => {
   const response = await apiClient.post<HospitalResource>(`/hospitals/${hospitalId}/resources`, resourceData);
   return response.data;

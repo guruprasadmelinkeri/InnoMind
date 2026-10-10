@@ -13,6 +13,7 @@ export interface HospitalResource {
   total: number;
   available: number;
   reserved: number;
+  buffer: number;
   last_updated: string;
   created_at: string;
   updated_at: string;

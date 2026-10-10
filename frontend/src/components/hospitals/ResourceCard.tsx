@@ -24,8 +24,11 @@ export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resourc
   const icon = icons[resource.resource_type] || <Bed className="w-5 h-5 text-slate-400" />;
   const label = labels[resource.resource_type] || resource.resource_type;
 
-  // Calculate percentage available
-  const availablePercent = resource.total > 0 ? Math.round((resource.available / resource.total) * 100) : 0;
+  // Calculate allocatable total (total - buffer)
+  const allocatableTotal = resource.total - resource.buffer;
+
+  // Calculate percentage available (out of allocatable resources)
+  const availablePercent = allocatableTotal > 0 ? Math.round((resource.available / allocatableTotal) * 100) : 0;
 
   return (
     <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 shadow-xl transition-all space-y-4">
@@ -34,13 +37,22 @@ export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resourc
           <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">{icon}</div>
           <div>
             <h4 className="font-bold text-slate-100 text-sm">{label}</h4>
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Total: {resource.total}</span>
+            <div className="flex flex-col items-start">
+              <span className="text-[10px] uppercase font-semibold text-slate-400">
+                Total: {resource.total} (Buffer: {resource.buffer})
+              </span>
+              {resource.buffer > 0 && (
+                <span className="text-[9px] uppercase font-semibold text-slate-500">
+                  Allocatable: {resource.total - resource.buffer}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="text-right">
           <span className="text-2xl font-black text-emerald-400">{resource.available}</span>
-          <span className="text-xs text-slate-500 font-medium"> / {resource.total}</span>
+          <span className="text-xs text-slate-500 font-medium"> / {resource.total - resource.buffer}</span>
         </div>
       </div>
 
@@ -55,10 +67,19 @@ export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resourc
           <div
             className="bg-amber-500 h-full transition-all duration-500"
             style={{
-              width: `${resource.total > 0 ? (resource.reserved / resource.total) * 100 : 0}%`,
+              width: `${allocatableTotal > 0 ? (resource.reserved / allocatableTotal) * 100 : 0}%`,
             }}
             title={`Reserved: ${resource.reserved}`}
           />
+          {resource.buffer > 0 && (
+            <div
+              className="bg-slate-500 h-full transition-all duration-500"
+              style={{
+                width: `${resource.total > 0 ? (resource.buffer / resource.total) * 100 : 0}%`,
+              }}
+              title={`Buffer: ${resource.buffer}`}
+            />
+          )}
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-slate-400">
@@ -68,6 +89,11 @@ export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resourc
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Reserved: {resource.reserved}
           </span>
+          {resource.buffer > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Buffer: {resource.buffer}
+            </span>
+          )}
         </div>
       </div>
 

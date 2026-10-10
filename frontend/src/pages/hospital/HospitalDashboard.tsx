@@ -38,6 +38,7 @@ export const HospitalDashboard: React.FC = () => {
   const [editingResource, setEditingResource] = useState<HospitalResource | null>(null);
   const [editTotal, setEditTotal] = useState<number>(0);
   const [editAvailable, setEditAvailable] = useState<number>(0);
+  const [editBuffer, setEditBuffer] = useState<number>(0);
   const [savingResource, setSavingResource] = useState(false);
 
   const fetchData = useCallback(async (showRefreshing = false) => {
@@ -81,6 +82,7 @@ export const HospitalDashboard: React.FC = () => {
                   available: payload.data.available,
                   reserved: payload.data.reserved,
                   total: payload.data.total,
+                  buffer: payload.data.buffer,
                   last_updated: payload.data.last_updated || new Date().toISOString(),
                 }
               : r
@@ -100,6 +102,7 @@ export const HospitalDashboard: React.FC = () => {
     setEditingResource(res);
     setEditTotal(res.total);
     setEditAvailable(res.available);
+    setEditBuffer(res.buffer);
   };
 
   const handleSaveResource = async (e: React.FormEvent) => {
@@ -109,6 +112,10 @@ export const HospitalDashboard: React.FC = () => {
       addToast('error', 'Available resources cannot exceed total capacity.');
       return;
     }
+    if (editAvailable + editingResource.reserved + editBuffer > editTotal) {
+      addToast('error', 'Available + Reserved + Buffer cannot exceed total capacity.');
+      return;
+    }
 
     setSavingResource(true);
     try {
@@ -116,6 +123,8 @@ export const HospitalDashboard: React.FC = () => {
         resource_type: editingResource.resource_type,
         total: editTotal,
         available: editAvailable,
+        reserved: editingResource.reserved,
+        buffer: editBuffer,
       });
       addToast('success', `${editingResource.resource_type} capacity updated successfully!`);
       setEditingResource(null);
@@ -285,7 +294,7 @@ export const HospitalDashboard: React.FC = () => {
                 <ResourceCard resource={res} />
                 <button
                   onClick={() => handleOpenEdit(res)}
-                  className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800/90 hover:bg-emerald-600 text-slate-400 hover:text-white border border-slate-700 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
+                  className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800/90 hover:bg-emerald-600 text-white hover:text-white border border-slate-700 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
                   title="Update capacity"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -323,15 +332,32 @@ export const HospitalDashboard: React.FC = () => {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-300">Available Count</label>
-                <input
-                  type="number"
-                  min="0"
-                  max={editTotal}
-                  value={editAvailable}
-                  onChange={(e) => setEditAvailable(Number(e.target.value))}
-                  required
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max={editTotal - editingResource.reserved}
+                    value={editAvailable}
+                    onChange={(e) => setEditAvailable(Number(e.target.value))}
+                    className="flex-1 accent-emerald-600"
+                  />
+                  <span className="text-xs font-mono text-slate-300">{editAvailable}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">Buffer Count</label>
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max={editTotal - editingResource.reserved}
+                    value={editBuffer}
+                    onChange={(e) => setEditBuffer(Number(e.target.value))}
+                    className="flex-1 accent-emerald-600"
+                  />
+                  <span className="text-xs font-mono text-slate-300">{editBuffer}</span>
+                </div>
               </div>
             </div>
 

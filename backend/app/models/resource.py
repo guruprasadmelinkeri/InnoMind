@@ -31,6 +31,7 @@ class HospitalResource(Base):
     total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     available: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reserved: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    buffer: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -57,7 +58,8 @@ class HospitalResource(Base):
         CheckConstraint("total >= 0", name="check_total_non_negative"),
         CheckConstraint("available >= 0", name="check_available_non_negative"),
         CheckConstraint("reserved >= 0", name="check_reserved_non_negative"),
-        CheckConstraint("available + reserved <= total", name="check_available_plus_reserved_lte_total"),
+        CheckConstraint("buffer >= 0", name="check_buffer_non_negative"),
+        CheckConstraint("available + reserved + buffer <= total", name="check_available_plus_reserved_buffer_lte_total"),
         UniqueConstraint("hospital_id", "resource_type", name="uq_hospital_resource_type"),
     )
 
