@@ -15,6 +15,16 @@ export interface EmergencyAnalyzeResponse {
   reasoning: string[];
 }
 
+export const transcribeEmergencyAudio = async (audio: Blob): Promise<string> => {
+  const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';
+  const form = new FormData();
+  form.append('file', audio, `emergency-recording.${extension}`);
+  const response = await apiClient.post<{ transcript: string }>('/ai/transcribe-audio', form, {
+    timeout: 120000,
+  });
+  return response.data.transcript;
+};
+
 export const analyzeEmergencyDescription = async (
   description: string
 ): Promise<EmergencyAnalyzeResponse> => {

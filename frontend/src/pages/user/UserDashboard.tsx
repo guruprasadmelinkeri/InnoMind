@@ -8,9 +8,11 @@ import {
   CheckCircle2,
   Clock3,
   Loader2,
+  Mic,
   MapPin,
   Plus,
   ShieldAlert,
+  Square,
   Sparkles,
   Trash2,
   Truck,
@@ -31,6 +33,7 @@ import type { EmergencyCase, EmergencyCaseCreate, EmergencyRequirementCreate, Em
 import type { Hospital, ResourceType } from '../../types/hospital';
 import { analyzeEmergencyDescription } from '../../services/aiApi';
 import type { EmergencyAnalyzeResponse } from '../../services/aiApi';
+import { transcribeEmergencyAudio } from '../../services/aiApi';
 
 const RESOURCE_TYPES: { type: ResourceType; label: string }[] = [
   { type: 'ICU_BED', label: 'ICU Bed' },
@@ -91,6 +94,10 @@ export const UserDashboard: React.FC = () => {
   const [aiAnalyzing, setAiAnalyzing] = useState<boolean>(false);
   const [aiAnalysis, setAiAnalysis] = useState<EmergencyAnalyzeResponse | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
 
   const [severity, setSeverity] = useState<EmergencySeverity>('CRITICAL');
   const [patientAge, setPatientAge] = useState<string>('45');
@@ -114,6 +121,72 @@ export const UserDashboard: React.FC = () => {
   const miniMapRef = useRef<HTMLDivElement>(null);
   const miniMapInstance = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+
+  useEffect(() => () => {
+    recorderRef.current?.stop();
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  const handleRecordAudio = async () => {
+    if (isRecording) {
+      recorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setAiError('Audio recording is not supported by this browser. You can type the emergency details instead.');
+      return;
+    }
+
+    try {
+      setAiError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      const preferredType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm']
+        .find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined);
+      recorderRef.current = recorder;
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
+      recorder.onerror = () => {
+        setIsRecording(false);
+        setAiError('Recording failed. Please try again or type the emergency details.');
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        recorderRef.current = null;
+        const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (!audio.size) return;
+        setIsTranscribing(true);
+        try {
+          const transcript = await transcribeEmergencyAudio(audio);
+          setAiInput(transcript);
+          setDescription(transcript);
+          setAiAnalysis(null);
+          setAiError(null);
+          addToast('success', 'Audio Transcribed', 'Your spoken emergency details were added to the form.');
+        } catch (err) {
+          const message = parseApiError(err).message;
+          setAiError(message);
+          addToast('error', 'Transcription Failed', message);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      const message = err instanceof Error && err.name === 'NotAllowedError'
+        ? 'Microphone access was denied. Allow microphone access or type the emergency details.'
+        : 'Could not start recording. Check your microphone and try again.';
+      setAiError(message);
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      recordingStreamRef.current = null;
+    }
+  };
 
   const loadRecommendations = useCallback(async (emergencyId: number) => {
     try {
@@ -480,6 +553,19 @@ export const UserDashboard: React.FC = () => {
             </div>
 
             <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleRecordAudio()}
+                  disabled={isTranscribing}
+                  aria-pressed={isRecording}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all disabled:opacity-50 cursor-pointer ${isRecording ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'}`}
+                >
+                  {isTranscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : isRecording ? <Square className="w-4 h-4 fill-current" /> : <Mic className="w-4 h-4" />}
+                  {isTranscribing ? 'Transcribing audio…' : isRecording ? 'Stop and transcribe' : 'Describe by voice'}
+                </button>
+                <span className="text-[11px] text-slate-500">{isRecording ? 'Recording… speak clearly, then stop to fill the form.' : 'Record a short description; the transcript will fill the emergency fields.'}</span>
+              </div>
               <textarea
                 value={aiInput}
                 onChange={(e) => setAiInput(e.target.value)}
@@ -492,7 +578,7 @@ export const UserDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleAnalyzeWithGemini}
-                  disabled={aiAnalyzing || !aiInput.trim()}
+                  disabled={aiAnalyzing || isTranscribing || !aiInput.trim()}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
                 >
                   {aiAnalyzing ? (
