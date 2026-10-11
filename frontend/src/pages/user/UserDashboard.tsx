@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import L from 'leaflet';
 import {
   Activity,
@@ -89,6 +89,9 @@ const getWorkflowProgress = (status: string): number => {
 
 export const UserDashboard: React.FC = () => {
   const { addToast } = useToast();
+  const navigate = useNavigate();
+  const { id: routeEmergencyId } = useParams<{ id: string }>();
+  const detailMode = Boolean(routeEmergencyId);
 
   const [aiInput, setAiInput] = useState<string>('');
   const [aiAnalyzing, setAiAnalyzing] = useState<boolean>(false);
@@ -117,6 +120,9 @@ export const UserDashboard: React.FC = () => {
   const [assignedAmbulance, setAssignedAmbulance] = useState<Ambulance | null>(null);
   const [transitProgress, setTransitProgress] = useState<TransitProgress | null>(null);
   const [loadingRecent, setLoadingRecent] = useState(true);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationMessage, setLocationMessage] = useState('Pickup location not shared yet');
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   const miniMapRef = useRef<HTMLDivElement>(null);
   const miniMapInstance = useRef<L.Map | null>(null);
@@ -164,10 +170,9 @@ export const UserDashboard: React.FC = () => {
         try {
           const transcript = await transcribeEmergencyAudio(audio);
           setAiInput(transcript);
-          setDescription(transcript);
           setAiAnalysis(null);
           setAiError(null);
-          addToast('success', 'Audio Transcribed', 'Your spoken emergency details were added to the form.');
+          addToast('success', 'Audio Transcribed', 'The transcript was added to the Analyze by Gemini text box.');
         } catch (err) {
           const message = parseApiError(err).message;
           setAiError(message);
@@ -220,12 +225,14 @@ export const UserDashboard: React.FC = () => {
         const pos = marker.getLatLng();
         setLatitude(pos.lat.toFixed(6));
         setLongitude(pos.lng.toFixed(6));
+        setLocationMessage('Manual pickup location selected');
       });
 
       map.on('click', (e: L.LeafletMouseEvent) => {
         marker.setLatLng(e.latlng);
         setLatitude(e.latlng.lat.toFixed(6));
         setLongitude(e.latlng.lng.toFixed(6));
+        setLocationMessage('Manual pickup location selected');
       });
 
       markerRef.current = marker;
@@ -236,31 +243,52 @@ export const UserDashboard: React.FC = () => {
       }
       miniMapInstance.current.setView([latNum, lonNum], miniMapInstance.current.getZoom());
     }
-  }, [latitude, longitude]);
+    miniMapInstance.current?.invalidateSize();
+  }, [latitude, longitude, showLocationPicker]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (routeEmergencyId) {
+      setActiveEmergency(null);
+      setLoadingRecent(true);
+      setError(null);
+    }
     const fetchRecent = async () => {
       try {
-        const [emergencyList, hospitalList] = await Promise.all([getEmergencies(), getHospitals()]);
+        const hospitalList = await getHospitals();
+        if (cancelled) return;
         setHospitals(hospitalList);
 
-        const sorted = [...emergencyList].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        const latest = sorted[0] || null;
-        setActiveEmergency(latest);
-        if (latest) {
-          await loadRecommendations(latest.id);
+        if (routeEmergencyId) {
+          const caseId = Number(routeEmergencyId);
+          if (!Number.isSafeInteger(caseId) || caseId <= 0) throw new Error('Invalid emergency case');
+          const selectedCase = await getEmergencyById(caseId);
+          if (cancelled) return;
+          setActiveEmergency(selectedCase);
+          await loadRecommendations(selectedCase.id);
+        } else {
+          const emergencyList = await getEmergencies();
+          if (cancelled) return;
+          const sorted = [...emergencyList].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+          const latest = sorted[0] || null;
+          setActiveEmergency(latest);
+          if (latest) await loadRecommendations(latest.id);
         }
       } catch (err) {
-        console.warn('Unable to load recent emergency request:', err);
+        if (!cancelled) {
+          if (routeEmergencyId) setError(parseApiError(err).message);
+          else console.warn('Unable to load recent emergency request:', err);
+        }
       } finally {
-        setLoadingRecent(false);
+        if (!cancelled) setLoadingRecent(false);
       }
     };
 
     void fetchRecent();
-  }, [loadRecommendations]);
+    return () => { cancelled = true; };
+  }, [loadRecommendations, routeEmergencyId]);
 
   useWebSocket(['EMERGENCY_STATUS_UPDATED', 'AMBULANCE_STATUS_UPDATED', 'AUTOMATION_INTERVENTION_REQUIRED'], (payload) => {
     if (!payload.data) return;
@@ -337,6 +365,10 @@ export const UserDashboard: React.FC = () => {
   );
 
   const selectedHospital = assignedHospital;
+  const selectedRecommendation = useMemo(
+    () => recommendations?.recommendations.find((item) => item.hospital_id === selectedHospital?.id) ?? topRecommendation,
+    [recommendations, selectedHospital?.id, topRecommendation]
+  );
 
   const liveEmergencyPoint = useMemo<EmergencyPoint | null>(() => {
     if (!activeEmergency) return null;
@@ -374,6 +406,35 @@ export const UserDashboard: React.FC = () => {
     setAiInput(DEMO_EMERGENCY_TEXT);
   };
 
+  const handleShareLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage('Location sharing is not supported by this browser. Choose a location manually.');
+      setShowLocationPicker(true);
+      return;
+    }
+
+    setLocationBusy(true);
+    setLocationMessage('Finding your current location…');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLatitude(coords.latitude.toFixed(6));
+        setLongitude(coords.longitude.toFixed(6));
+        setLocationMessage('Your pickup location is ready');
+        setLocationBusy(false);
+      },
+      (locationError) => {
+        setLocationMessage(
+          locationError.code === locationError.PERMISSION_DENIED
+            ? 'Location permission was not granted. Choose a location manually.'
+            : 'Could not find your location. Choose a location manually.'
+        );
+        setShowLocationPicker(true);
+        setLocationBusy(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  };
+
   const handleAnalyzeWithGemini = async () => {
     if (!aiInput.trim()) {
       setAiError('Please enter an emergency description to analyze.');
@@ -405,7 +466,9 @@ export const UserDashboard: React.FC = () => {
     if (aiAnalysis.patient_age !== undefined && aiAnalysis.patient_age !== null) {
       setPatientAge(String(aiAnalysis.patient_age));
     }
-    setDescription(aiAnalysis.summary || aiInput);
+    // Preserve the original transcript in the emergency record while Gemini
+    // supplies structured severity, age, and resource values.
+    setDescription(aiInput.trim() || aiAnalysis.summary);
 
     if (aiAnalysis.required_resources.length > 0) {
       setRequirements(
@@ -454,6 +517,7 @@ export const UserDashboard: React.FC = () => {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    const emergencyDescription = description.trim() || aiInput.trim();
 
     const latNum = parseFloat(latitude);
     const lonNum = parseFloat(longitude);
@@ -474,7 +538,7 @@ export const UserDashboard: React.FC = () => {
       return;
     }
 
-    if (!description.trim()) {
+    if (!emergencyDescription) {
       setError('Please describe the emergency so dispatch can assess the situation.');
       return;
     }
@@ -497,14 +561,14 @@ export const UserDashboard: React.FC = () => {
       const createdCase = await createEmergency({
         severity,
         patient_age: ageNum,
-        description: description.trim(),
+        description: emergencyDescription,
         pickup_latitude: latNum,
         pickup_longitude: lonNum,
         requirements,
       } as EmergencyCaseCreate);
 
       setActiveEmergency(createdCase);
-      await loadRecommendations(createdCase.id);
+      navigate(`/user/emergency/${createdCase.id}`);
       addToast('success', 'Emergency Request Sent', `Case ${createdCase.case_number} has been sent to the operations desk.`);
     } catch (err) {
       const parsed = parseApiError(err);
@@ -516,25 +580,21 @@ export const UserDashboard: React.FC = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto pb-12 space-y-6">
+    <div className="mx-auto max-w-[1500px] pb-12 space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <Link
-            to="/user"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors mb-2"
-          >
-            <ArrowLeft className="w-4 h-4" /> My care dashboard
-          </Link>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <ShieldAlert className="w-6 h-6 text-emerald-600" /> User Emergency Dashboard
-            </h1>
-          </div>
+          {detailMode && <Link to="/user" className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700"><ArrowLeft className="w-4 h-4" /> New emergency request</Link>}
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
+            <ShieldAlert className="h-6 w-6 text-emerald-600" /> {detailMode ? 'Emergency response' : 'Get emergency help'}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">{detailMode ? 'Your request, live progress, and hospital handoff in one place.' : 'Tell us what happened. Dispatch will coordinate the next steps.'}</p>
         </div>
+        {!detailMode && activeEmergency && <Link to={`/user/emergency/${activeEmergency.id}`} className="shrink-0 rounded-xl border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-800 shadow-sm hover:bg-teal-50">Track latest request</Link>}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
-        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+      <div className={`grid grid-cols-1 gap-5 ${detailMode ? 'xl:grid-cols-1' : 'mx-auto max-w-3xl'}`}>
+        {!detailMode && (
+        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm space-y-6">
           <div className="p-5 rounded-2xl bg-white border border-emerald-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -559,13 +619,16 @@ export const UserDashboard: React.FC = () => {
                   onClick={() => void handleRecordAudio()}
                   disabled={isTranscribing}
                   aria-pressed={isRecording}
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all disabled:opacity-50 cursor-pointer ${isRecording ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-colors disabled:opacity-50 ${isRecording ? 'bg-rose-700 hover:bg-rose-800 text-white' : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'}`}
                 >
                   {isTranscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : isRecording ? <Square className="w-4 h-4 fill-current" /> : <Mic className="w-4 h-4" />}
-                  {isTranscribing ? 'Transcribing audio…' : isRecording ? 'Stop and transcribe' : 'Describe by voice'}
+                  {isTranscribing ? 'Transcribing…' : isRecording ? 'Stop recording' : 'Speak to fill this field'}
                 </button>
-                <span className="text-[11px] text-slate-500">{isRecording ? 'Recording… speak clearly, then stop to fill the form.' : 'Record a short description; the transcript will fill the emergency fields.'}</span>
+                <span className="text-[11px] text-slate-600">Speech is transcribed into this editable text box. Pickup location is entered separately below.</span>
               </div>
+              {(isRecording || isTranscribing) && (
+                <p role="status" className="text-xs text-teal-800">{isRecording ? 'Recording… stop when you are done speaking.' : 'Converting speech to text…'}</p>
+              )}
               <textarea
                 value={aiInput}
                 onChange={(e) => setAiInput(e.target.value)}
@@ -578,7 +641,7 @@ export const UserDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleAnalyzeWithGemini}
-                  disabled={aiAnalyzing || isTranscribing || !aiInput.trim()}
+                disabled={aiAnalyzing || !aiInput.trim()}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
                 >
                   {aiAnalyzing ? (
@@ -658,7 +721,9 @@ export const UserDashboard: React.FC = () => {
             </div>
           )}
 
-          <div className="space-y-4">
+          <details className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <summary className="cursor-pointer text-xs font-bold text-slate-700">Optional patient and clinical details</summary>
+            <div className="mt-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700">Emergency Severity</label>
@@ -689,7 +754,9 @@ export const UserDashboard: React.FC = () => {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Incident Description / Notes</label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-slate-700">Incident Description / Notes</label>
+              </div>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -699,15 +766,21 @@ export const UserDashboard: React.FC = () => {
               />
             </div>
           </div>
+          </details>
 
           <div className="space-y-4">
-            <div className="border-b border-slate-100 pb-2 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-red-500" /> Pickup Location Coordinates
-              </h3>
-              <span className="text-[11px] text-emerald-700 font-medium">Click map or select landmark below</span>
+            <div>
+              <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800"><MapPin className="h-4 w-4 text-rose-500" /> Pickup location</h3>
+              <p className="mt-1 text-[11px] text-slate-500">Share your current location or choose one manually.</p>
             </div>
 
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={handleShareLocation} disabled={locationBusy} className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-teal-800 disabled:opacity-60"><MapPin className="h-4 w-4" />{locationBusy ? 'Finding location…' : 'Share my location'}</button>
+              <button type="button" onClick={() => setShowLocationPicker((open) => !open)} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">{showLocationPicker ? 'Hide map options' : 'Choose location manually'}</button>
+              <span role="status" className="text-[11px] text-slate-500">{locationMessage}</span>
+            </div>
+
+            {showLocationPicker && <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[11px] font-semibold text-slate-400 mr-1">Presets:</span>
               {PUNE_PRESETS.map((preset) => {
@@ -721,6 +794,7 @@ export const UserDashboard: React.FC = () => {
                     onClick={() => {
                       setLatitude(preset.latitude.toFixed(6));
                       setLongitude(preset.longitude.toFixed(6));
+                      setLocationMessage(`Pickup location set to ${preset.name}`);
                     }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                       isSelected
@@ -766,8 +840,12 @@ export const UserDashboard: React.FC = () => {
                 />
               </div>
             </div>
+            </div>}
           </div>
 
+          <details className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <summary className="cursor-pointer text-xs font-bold text-slate-700">Hospital resources needed (optional)</summary>
+            <div className="mt-4 space-y-4">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -843,14 +921,10 @@ export const UserDashboard: React.FC = () => {
               ))}
             </div>
           </div>
+            </div>
+          </details>
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
-            <Link
-              to="/dispatcher"
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
-            >
-              Cancel
-            </Link>
             <button
               type="submit"
               disabled={submitting}
@@ -861,54 +935,66 @@ export const UserDashboard: React.FC = () => {
                   <Loader2 className="w-4 h-4 animate-spin" /> Sending Request...
                 </>
               ) : (
-                'SEND EMERGENCY REQUEST'
+                'Create emergency'
               )}
             </button>
           </div>
         </form>
+        )}
 
+        {detailMode && (
         <div className="space-y-6">
-          <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-sm border border-slate-800">
+          {!activeEmergency && loadingRecent && <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin text-teal-600" />Loading your emergency response…</div>}
+          {!activeEmergency && !loadingRecent && <div className="rounded-2xl border border-slate-200 bg-white p-6"><p className="text-sm font-semibold text-slate-800">We could not load this emergency request.</p><p className="mt-1 text-xs text-slate-500">It may no longer be available on your account.</p><Link to="/user" className="mt-4 inline-flex text-xs font-bold text-teal-700">Start a new request</Link></div>}
+          {activeEmergency && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-700">Emergency transcript</p><h2 className="mt-1 text-lg font-bold text-slate-900">Case {activeEmergency.case_number}</h2></div><StatusBadge status={activeEmergency.status} /></div><p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">{activeEmergency.description}</p><div className="mt-4 flex flex-wrap gap-2 text-[11px]"><span className="rounded-lg bg-slate-50 px-3 py-1.5 font-semibold text-slate-600">Severity: {activeEmergency.severity}</span>{activeEmergency.patient_age != null && <span className="rounded-lg bg-slate-50 px-3 py-1.5 font-semibold text-slate-600">Age: {activeEmergency.patient_age}</span>}{activeEmergency.requirements?.map((item, index) => <span key={`${item.resource_type}-${index}`} className="rounded-lg bg-teal-50 px-3 py-1.5 font-semibold text-teal-800">{item.resource_type.replaceAll('_', ' ')} ×{item.quantity}</span>)}</div></section>}
+          {activeEmergency && (<>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-emerald-400" />
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-200">Live status</h2>
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Activity className="w-4 h-4" /></span>
+                <div><h2 className="text-sm font-bold text-slate-900">Live response</h2><p className="text-[11px] text-slate-500">Updates automatically as dispatch progresses</p></div>
               </div>
               {activeEmergency ? <StatusBadge status={activeEmergency.status} /> : null}
             </div>
 
             {loadingRecent ? (
-              <div className="flex items-center gap-2 text-sm text-slate-300">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Loader2 className="w-4 h-4 animate-spin" /> Loading live emergency status...
               </div>
             ) : activeEmergency ? (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 text-emerald-300 text-sm font-semibold">
-                  <MapPin className="w-4 h-4" /> Case {activeEmergency.case_number}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-emerald-800 text-sm font-bold"><MapPin className="w-4 h-4" /> Case {activeEmergency.case_number}</div>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                    {activeEmergency.status === 'HANDOFF_COMPLETED'
+                      ? <CheckCircle2 className="h-4 w-4" />
+                      : <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
+                    {activeEmergency.status === 'HANDOFF_COMPLETED' ? 'Response complete' : 'Live tracking'}
+                  </span>
                 </div>
 
-                <p className="text-sm text-slate-300">
+                <p className="text-sm leading-6 text-slate-600">
                   {USER_STATUS_COPY[activeEmergency.status] || 'Emergency request is being processed.'}
                 </p>
 
-                <div className="grid grid-cols-2 gap-3 text-xs text-slate-300">
-                  <div className="rounded-xl bg-slate-800/80 p-3 border border-slate-700">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-200">
                     <div className="uppercase tracking-wide text-slate-400 mb-1">Severity</div>
-                    <div className="font-bold text-white">{activeEmergency.severity}</div>
+                    <div className="font-bold text-slate-800">{activeEmergency.severity}</div>
                   </div>
-                  <div className="rounded-xl bg-slate-800/80 p-3 border border-slate-700">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-200">
                     <div className="uppercase tracking-wide text-slate-400 mb-1">Location</div>
-                    <div className="font-bold text-white">{`${activeEmergency.pickup_latitude}, ${activeEmergency.pickup_longitude}`}</div>
+                    <div className="font-bold text-slate-800">{`${Number(activeEmergency.pickup_latitude).toFixed(4)}, ${Number(activeEmergency.pickup_longitude).toFixed(4)}`}</div>
                   </div>
                 </div>
 
                 {topRecommendation && (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-100">
-                    <div className="flex items-center gap-2 mb-2 text-emerald-200 font-semibold">
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs">
+                    <div className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
                       <Clock3 className="w-4 h-4" /> Recommended destination
                     </div>
-                    <div className="font-bold text-white">{topRecommendation.hospital_name}</div>
-                    <div className="mt-1 text-emerald-100/80">
+                    <div className="font-bold text-slate-800">{topRecommendation.hospital_name}</div>
+                    <div className="mt-1 text-slate-600">
                       ETA {topRecommendation.estimated_travel_minutes} min • Score {Math.round(topRecommendation.final_score)}%
                     </div>
                   </div>
@@ -922,15 +1008,14 @@ export const UserDashboard: React.FC = () => {
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Response workflow</h3>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div><h3 className="text-sm font-bold text-slate-900">Your response progress</h3><p className="mt-0.5 text-[11px] text-slate-500">Steps update as dispatch confirms them</p></div>
+              <span className="text-sm font-bold tabular-nums text-emerald-700">{Math.round(workflowProgress)}%</span>
+            </div>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
-                  <span>Tracking</span>
-                  <span>{Math.round(workflowProgress)}%</span>
-                </div>
-                <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-500 transition-all duration-500"
                     style={{ width: `${workflowProgress}%` }}
@@ -938,44 +1023,47 @@ export const UserDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">
                 {STATUS_SEQUENCE.map((status, idx) => {
-                  const isDone = idx < (workflowIndex >= 0 ? workflowIndex : 0);
-                  const isCurrent = idx === workflowIndex;
-                  const isPending = idx > (workflowIndex >= 0 ? workflowIndex : -1);
+                  const isDone = activeEmergency?.status === 'HANDOFF_COMPLETED' || idx < workflowIndex;
+                  const isCurrent = idx === workflowIndex && !isDone;
+                  const isPending = !isDone && !isCurrent;
 
                   return (
                     <div
                       key={status}
-                      className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-[11px] ${
+                      aria-current={isCurrent ? 'step' : undefined}
+                      className={`flex min-h-[76px] flex-col items-start justify-between gap-2 rounded-xl border p-3 text-[11px] transition-colors ${
                         isDone
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                           : isCurrent
-                            ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700'
+                            ? 'border-emerald-400 bg-emerald-50 text-emerald-800 shadow-sm'
                             : 'border-slate-200 bg-slate-50 text-slate-500'
                       }`}
                     >
-                      <span
-                        className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold ${
+                      <span className="flex w-full items-center justify-between">
+                        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold ${
                           isDone
                             ? 'bg-emerald-600 text-white'
                             : isCurrent
                               ? 'bg-emerald-500 text-white'
                               : 'bg-slate-200 text-slate-500'
-                        }`}
-                      >
-                        {idx + 1}
+                        }`}>
+                          {isDone ? <CheckCircle2 className="h-4 w-4" /> : idx + 1}
+                        </span>
+                        {isCurrent && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
                       </span>
-                      <span className="font-semibold">
-                        {status.replace('_', ' ')}
+                      <span className="font-semibold leading-tight">{status.replace('_', ' ')}</span>
+                      <span className={`text-[9px] font-semibold uppercase tracking-wide ${isCurrent ? 'text-emerald-700' : 'text-slate-400'}`}>
+                        {isDone ? 'Complete' : isCurrent ? 'In progress' : isPending ? 'Up next' : ''}
                       </span>
-                      {isPending && <span className="ml-auto text-[9px] uppercase tracking-wide">Queued</span>}
                     </div>
                   );
                 })}
               </div>
             </div>
           </div>
+          </>)}
 
           {activeEmergency && (
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
@@ -1013,7 +1101,40 @@ export const UserDashboard: React.FC = () => {
                   </div>
                 </div>
               )}
-              {liveEmergencyPoint && <div className="overflow-hidden rounded-2xl border border-slate-200"><PuneMap hospitals={hospitals} emergencyPoint={liveEmergencyPoint} ambulances={assignedAmbulance ? [assignedAmbulance] : []} selectedHospitalId={selectedHospital?.id ?? null} onSelectHospital={() => undefined} recommendations={recommendations?.recommendations ?? []} height="260px"/></div>}
+              {selectedHospital && (
+                <div className="mb-4 grid gap-4 rounded-2xl border border-teal-100 bg-gradient-to-r from-teal-50 to-white p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-700">Destination hospital</p>
+                    <p className="mt-1 truncate text-base font-bold text-slate-900">{selectedHospital.name}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{selectedHospital.address || 'Hospital destination confirmed by dispatch'}</p>
+                  </div>
+                  <div className="rounded-xl border border-white bg-white/80 px-4 py-2.5 sm:min-w-[112px]">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{activeEmergency.status === 'EN_ROUTE' ? 'Time remaining' : 'Estimated travel'}</p>
+                    <p className="mt-1 flex items-center gap-1.5 text-lg font-bold tabular-nums text-teal-800">
+                      <Clock3 className="h-4 w-4" />
+                      {activeEmergency.status === 'EN_ROUTE'
+                        ? formatTransitEta(transitProgress?.etaSecondsRemaining ?? null)
+                        : selectedRecommendation?.estimated_travel_minutes != null
+                          ? `${selectedRecommendation.estimated_travel_minutes} min`
+                          : 'Calculating'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white bg-white/80 px-4 py-2.5 sm:min-w-[112px]">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{activeEmergency.status === 'EN_ROUTE' ? 'Distance left' : 'Route distance'}</p>
+                    <p className="mt-1 flex items-center gap-1.5 text-lg font-bold tabular-nums text-slate-800">
+                      <MapPin className="h-4 w-4 text-teal-700" />
+                      {activeEmergency.status === 'EN_ROUTE'
+                        ? transitProgress?.distanceRemainingKm == null
+                          ? 'Calculating'
+                          : `${transitProgress.distanceRemainingKm.toFixed(1)} km`
+                        : selectedRecommendation?.distance_km != null
+                          ? `${selectedRecommendation.distance_km.toFixed(2)} km`
+                          : 'Calculating'}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {liveEmergencyPoint && <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-inner"><PuneMap hospitals={hospitals} emergencyPoint={liveEmergencyPoint} ambulances={assignedAmbulance ? [assignedAmbulance] : []} selectedHospitalId={selectedHospital?.id ?? null} onSelectHospital={() => undefined} recommendations={recommendations?.recommendations ?? []} height="360px" showRouteInfo={false}/></div>}
               {!assignedAmbulance && <p className="mt-3 text-xs leading-5 text-slate-500">This view updates from your case and ambulance records. Live vehicle location appears when dispatch has assigned a unit and reported its coordinates.</p>}
             </div>
           )}
@@ -1036,6 +1157,7 @@ export const UserDashboard: React.FC = () => {
             </ul>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

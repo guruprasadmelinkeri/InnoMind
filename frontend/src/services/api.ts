@@ -23,11 +23,35 @@ export interface ApiErrorResponse {
   isConflict?: boolean;
 }
 
+const formatApiDetail = (detail: unknown): string | undefined => {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.map((issue) => {
+      if (typeof issue === 'string') return issue;
+      if (!issue || typeof issue !== 'object') return undefined;
+      const item = issue as { msg?: unknown; loc?: unknown };
+      const message = typeof item.msg === 'string' ? item.msg : undefined;
+      if (!message) return undefined;
+      const location = Array.isArray(item.loc)
+        ? item.loc.filter((part) => typeof part === 'string' && part !== 'body').join(' → ')
+        : '';
+      return location ? `${location}: ${message}` : message;
+    }).filter((message): message is string => Boolean(message));
+    return messages.length ? messages.join('\n') : 'The request could not be validated. Please check the entered information.';
+  }
+  if (detail && typeof detail === 'object') {
+    const value = detail as { msg?: unknown; message?: unknown };
+    if (typeof value.message === 'string') return value.message;
+    if (typeof value.msg === 'string') return value.msg;
+  }
+  return undefined;
+};
+
 export const parseApiError = (error: unknown): ApiErrorResponse => {
   if (axios.isAxiosError(error)) {
-    const axiosError = error as AxiosError<{ detail?: string }>;
+    const axiosError = error as AxiosError<{ detail?: unknown }>;
     const status = axiosError.response?.status;
-    const detail = axiosError.response?.data?.detail;
+    const detail = formatApiDetail(axiosError.response?.data?.detail);
 
     if (status === 409) {
       return {
@@ -78,6 +102,6 @@ export const parseApiError = (error: unknown): ApiErrorResponse => {
   }
 
   return {
-    message: (error as Error)?.message || 'An unknown error occurred.',
+    message: error instanceof Error ? error.message : 'An unknown error occurred.',
   };
 };

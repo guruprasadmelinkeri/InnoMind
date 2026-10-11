@@ -30,6 +30,7 @@ export const App: React.FC = () => <Routes>
   <Route path="/dispatcher/simulation" element={<Workspace roles={['ADMIN']}><SimulationLab/></Workspace>}/>
   <Route path="/dispatcher/allocation-simulation" element={<Workspace roles={['ADMIN']}><AllocationSimulation/></Workspace>}/>
   <Route path="/user" element={<Workspace roles={['USER']}><UserDashboard/></Workspace>}/>
+  <Route path="/user/emergency/:id" element={<Workspace roles={['USER']}><UserDashboard/></Workspace>}/>
   <Route path="/hospital" element={<RootRedirect/>}/>
   <Route path="/hospital/:hospitalId" element={<Workspace roles={['HOSPITAL']}><HospitalDashboard/></Workspace>}/>
   <Route path="/hospital/:hospitalId/requests" element={<Workspace roles={['HOSPITAL']}><HospitalRequestsPage/></Workspace>}/>

@@ -43,11 +43,15 @@ def get_workflow_mode() -> str:
 
 
 def configure_workflow_mode_from_hospitals(db: Session) -> str:
-    """Restore the global demo mode from the existing per-hospital settings."""
+    """Restore the global demo mode from the existing per-hospital settings.
+
+    A mix of enabled and disabled hospitals represents per-hospital approval
+    preferences, not a request to disable ambulance automation globally.
+    """
     hospitals = db.query(Hospital.automatic_resource_allocation).all()
     if hospitals and all(not enabled for (enabled,) in hospitals):
         set_workflow_mode("MANUAL")
-    elif hospitals and all(enabled for (enabled,) in hospitals):
+    elif hospitals and any(enabled for (enabled,) in hospitals):
         set_workflow_mode("AUTO")
     return _workflow_mode
 
@@ -94,6 +98,7 @@ def _run_batch_workflow() -> None:
         return
     _batch_timer_lock = True
     auto_mode = _batch_auto_mode
+    scheduled_emergency_ids = set(_batch_emergency_ids)
 
     try:
         db = SessionLocal()
@@ -101,10 +106,18 @@ def _run_batch_workflow() -> None:
             configure_workflow_mode_from_hospitals(db)
             if _workflow_mode == "MANUAL" and not auto_mode:
                 return
-            # Collect emergencies that are still pending (CREATED or SEARCHING) and have no accepted allocation request
+            if not scheduled_emergency_ids:
+                return
+
+            # Only process the cases that triggered this debounced batch. A
+            # broad pending-case query can pull in unrelated manual requests
+            # when any new case is scheduled (for example, around a capacity
+            # refill), silently reserving resources for cases the dispatcher
+            # did not put into this run.
             pending_emergencies = (
                 db.query(EmergencyCase)
                 .filter(
+                    EmergencyCase.id.in_(scheduled_emergency_ids),
                     EmergencyCase.status.in_([EmergencyStatus.CREATED, EmergencyStatus.SEARCHING]),
                     ~EmergencyCase.allocation_requests.any(
                         AllocationRequest.status == AllocationRequestStatus.ACCEPTED
@@ -319,7 +332,11 @@ def _schedule_auto_arrival_update(emergency_id: int, ambulance_id: int, delay_se
     def _arrival_callback() -> None:
         db = SessionLocal()
         try:
-            configure_workflow_mode_from_hospitals(db)
+            # A dispatcher can explicitly start automation for a single case.
+            # Preserve that choice even when the hospital-wide preferences are
+            # mixed or all set to manual.
+            if emergency_id not in _auto_mode_emergency_ids:
+                configure_workflow_mode_from_hospitals(db)
             if _workflow_mode == "MANUAL":
                 return
             emergency = db.query(EmergencyCase).filter(EmergencyCase.id == emergency_id).first()
@@ -429,7 +446,10 @@ def auto_assign_ambulance_for_emergency(db: Session, emergency_id: int) -> Dict[
     if not emergency:
         raise HTTPException(status_code=404, detail=f"Emergency case with id {emergency_id} not found")
 
-    configure_workflow_mode_from_hospitals(db)
+    # run-pending marks cases explicitly authorized for automation. Do not let
+    # persisted hospital approval preferences override the dispatcher's choice.
+    if emergency_id not in _auto_mode_emergency_ids:
+        configure_workflow_mode_from_hospitals(db)
     if _workflow_mode == "MANUAL":
         return {"status": "manual_dispatch_pending", "reason": "workflow_mode_is_manual"}
 
@@ -453,15 +473,9 @@ def auto_assign_ambulance_for_emergency(db: Session, emergency_id: int) -> Dict[
 
     ambulance = _pick_available_ambulance(db)
     if not ambulance:
-        _emit_intervention_required(
-            emergency,
-            reason="AMBULANCE_UNAVAILABLE",
-            message="No available ambulance could be auto-assigned. Dispatcher action required.",
-        )
-        return {
-            "status": "manual_intervention_required",
-            "reason": "AMBULANCE_UNAVAILABLE",
-        }
+        # The demo fleet can be fully occupied by earlier active cases. Add a
+        # reserve unit instead of leaving an automatic case waiting for dispatch.
+        ambulance = ambulance_service.ensure_available_automatic_ambulance(db)
 
     updated_emergency = ambulance_service.assign_ambulance_to_emergency(db, emergency.id, ambulance.id)
     _assign_receiving_clinician(db, updated_emergency)

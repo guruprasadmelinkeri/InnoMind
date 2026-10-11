@@ -21,6 +21,8 @@ export const transcribeEmergencyAudio = async (audio: Blob): Promise<string> => 
   form.append('file', audio, `emergency-recording.${extension}`);
   const response = await apiClient.post<{ transcript: string }>('/ai/transcribe-audio', form, {
     timeout: 120000,
+    // apiClient defaults to JSON; this endpoint requires a multipart UploadFile.
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data.transcript;
 };

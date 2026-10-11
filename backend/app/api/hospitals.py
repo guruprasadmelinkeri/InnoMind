@@ -11,7 +11,8 @@ from app.services import hospital_service
 from app.websocket import WebSocketEvents, broadcast_event_sync
 from app.core.auth import require_roles, assert_hospital_scope
 from app.models.account import Account
-from app.models.resource import HospitalResource
+from app.models.hospital import Hospital
+from app.models.resource import HospitalResource, ResourceType
 
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 
@@ -48,23 +49,51 @@ def refill_available_capacity(
     db: Session = Depends(get_db),
     account: Account = Depends(require_roles("ADMIN")),
 ):
-    """Refill availability without modifying total, reserved, or buffer counts."""
+    """Restore demo capacity while retaining existing reservations and buffers."""
+    hospitals = db.query(Hospital).order_by(Hospital.id).with_for_update().all()
     resources = db.query(HospitalResource).order_by(HospitalResource.hospital_id, HospitalResource.id).with_for_update().all()
+    resource_by_key = {(resource.hospital_id, resource.resource_type): resource for resource in resources}
+    minimum_available = {
+        ResourceType.ICU_BED: 3,
+        ResourceType.GENERAL_BED: 7,
+        ResourceType.VENTILATOR: 2,
+        ResourceType.OXYGEN_BED: 3,
+        ResourceType.TRAUMA_BED: 2,
+        ResourceType.OPERATING_ROOM: 1,
+    }
+    resource_types = list(ResourceType)
+    resources_added = 0
 
-    # Validate the entire batch before changing anything so a bad record cannot
-    # leave only some hospitals refilled.
-    invalid = [r for r in resources if r.reserved + r.buffer > r.total]
-    if invalid:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Refill cancelled: one or more resources have reserved and buffer counts above total capacity.",
-        )
+    for hospital in hospitals:
+        for index, resource_type in enumerate(resource_types):
+            resource = resource_by_key.get((hospital.id, resource_type))
+            # Small deterministic variation keeps demo capacity realistic across facilities.
+            floor = minimum_available[resource_type] + ((hospital.id + index) % 3)
+            if resource is None:
+                resource = HospitalResource(
+                    hospital_id=hospital.id,
+                    resource_type=resource_type,
+                    total=floor,
+                    available=floor,
+                    reserved=0,
+                    buffer=0,
+                )
+                db.add(resource)
+                resources.append(resource)
+                resource_by_key[(hospital.id, resource_type)] = resource
+                resources_added += 1
+                continue
 
-    updated_hospitals = set()
-    for resource in resources:
-        resource.available = resource.total - resource.reserved - resource.buffer
-        updated_hospitals.add(resource.hospital_id)
+            # If stored capacity is zero (or below its reservations/buffer), grow
+            # total only as much as needed to restore a small usable amount.
+            resource.total = max(resource.total, resource.reserved + resource.buffer + floor)
+            resource.available = resource.total - resource.reserved - resource.buffer
+
+    updated_hospitals = {hospital.id for hospital in hospitals}
     db.commit()
+
+    for resource in resources:
+        db.refresh(resource)
 
     for resource in resources:
         broadcast_event_sync(
@@ -81,7 +110,12 @@ def refill_available_capacity(
             },
         )
 
-    return {"hospitals_updated": len(updated_hospitals), "resources_updated": len(resources)}
+    return {
+        "hospitals_updated": len(updated_hospitals),
+        "resources_updated": len(resources),
+        "resources_added": resources_added,
+        "minimum_available_per_resource": min(minimum_available.values()),
+    }
 
 @router.get("", response_model=List[HospitalResponse], summary="List all hospitals")
 def list_hospitals(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), account: Account = Depends(require_roles("ADMIN", "USER", "HOSPITAL"))):

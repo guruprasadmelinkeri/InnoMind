@@ -41,6 +41,37 @@ def ensure_demo_ambulance_fleet(db: Session) -> None:
     ])
     db.commit()
 
+
+def ensure_available_automatic_ambulance(db: Session) -> Ambulance:
+    """Return an available unit, creating a demo reserve unit if the fleet is busy.
+
+    Automatic demos should not stall because the seeded fleet is already in use.
+    Existing units and active assignments are never changed or reused.
+    """
+    available = db.query(Ambulance).filter(
+        Ambulance.status == AmbulanceStatus.AVAILABLE
+    ).order_by(Ambulance.id.asc()).first()
+    if available:
+        return available
+
+    existing_numbers = {
+        number for (number,) in db.query(Ambulance.vehicle_number).all()
+    }
+    sequence = 1
+    while f"MH12-AUTO-{sequence:04d}" in existing_numbers:
+        sequence += 1
+
+    reserve = Ambulance(
+        vehicle_number=f"MH12-AUTO-{sequence:04d}",
+        status=AmbulanceStatus.AVAILABLE,
+        current_latitude=18.5204,
+        current_longitude=73.8567,
+    )
+    db.add(reserve)
+    db.commit()
+    db.refresh(reserve)
+    return reserve
+
 def get_ambulance_by_id(db: Session, ambulance_id: int) -> Ambulance:
     ambulance = db.query(Ambulance).filter(Ambulance.id == ambulance_id).first()
     if not ambulance:

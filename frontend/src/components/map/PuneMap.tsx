@@ -83,6 +83,7 @@ interface PuneMapProps {
   onRouteInfoChange?: (route: RouteResult | null) => void;
   recommendations?: HospitalRecommendation[];
   height?: string;
+  showRouteInfo?: boolean;
 }
 
 export const PuneMap: React.FC<PuneMapProps> = ({
@@ -96,6 +97,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
   onRouteInfoChange,
   recommendations = [],
   height = '520px',
+  showRouteInfo = true,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -562,7 +564,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
         <div ref={mapContainerRef} className="w-full h-full z-0" />
 
         {/* Selected Route Information Floating Overlay */}
-        {selectedHospitalObj && (
+        {showRouteInfo && selectedHospitalObj && (
           <div className="absolute top-4 left-4 z-[500] max-w-sm bg-white/95 backdrop-blur-md rounded-xl border border-teal-200 shadow-lg p-3 space-y-2">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1.5">
               <div className="flex items-center gap-1.5 text-teal-700">
@@ -608,10 +610,12 @@ export const PuneMap: React.FC<PuneMapProps> = ({
         )}
 
         {/* Click tip indicator */}
-        <div className="absolute bottom-4 left-4 z-[500] pointer-events-none bg-slate-900/80 text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow backdrop-blur-xs flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-red-400" />
-          Click anywhere on the map to set the emergency location
-        </div>
+        {onEmergencyPointChange && (
+          <div className="absolute bottom-4 left-4 z-[500] pointer-events-none bg-slate-900/80 text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow backdrop-blur-xs flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-red-400" />
+            Click anywhere on the map to set the emergency location
+          </div>
+        )}
       </div>
 
       {/* Map Legend Footer */}

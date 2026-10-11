@@ -98,10 +98,11 @@ def run_pending_automation(
 
     enable_auto_mode_for_emergencies(set(pending_ids + awaiting_ambulance_ids))
 
-    # Admin explicitly selected Auto Mode: this one run may accept eligible
-    # hospitals even when they normally require a manual response.
-    if pending_ids:
-        schedule_automated_workflow(pending_ids[0], auto_mode=True)
+    # Admin explicitly selected Auto Mode: schedule every eligible pending
+    # case in the same debounced batch, including facilities that normally
+    # require a manual response.
+    for emergency_id in pending_ids:
+        schedule_automated_workflow(emergency_id, auto_mode=True)
 
     for emergency_id in awaiting_ambulance_ids:
         try:

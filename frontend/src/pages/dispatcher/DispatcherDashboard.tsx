@@ -201,21 +201,14 @@ export const DispatcherDashboard: React.FC = () => {
         '/emergencies/automation/mode', { mode }
       );
       setWorkflowMode(data.mode);
-      const automationRun = mode === 'AUTO'
-        ? (await apiClient.post<{ status: string; scheduled_emergencies: number }>('/emergencies/automation/run-pending')).data
-        : null;
       addToast(
         'success',
-        mode === 'MANUAL' ? 'Manual Demo Ready' : automationRun?.scheduled_emergencies
-          ? 'Automatic Workflow Started'
-          : 'Automatic Workflow Enabled',
+        mode === 'MANUAL' ? 'Manual Demo Ready' : 'Automatic Workflow Enabled',
         mode === 'MANUAL'
           ? 'New cases will wait for dispatcher and hospital actions. Ambulance arrival and handoff will also wait for manual updates.'
-          : automationRun?.scheduled_emergencies
-            ? `Automatic allocation enabled for ${data.hospitals_updated} hospitals. Processing ${automationRun.scheduled_emergencies} waiting case(s).`
-            : `Automatic allocation enabled for ${data.hospitals_updated} hospitals. New cases will progress automatically.`
+          : `Automatic allocation enabled for ${data.hospitals_updated} hospitals. New emergencies will progress automatically; existing pending cases are unchanged.`
       );
-      if (mode === 'MANUAL') void fetchData(false);
+      void fetchData(false);
     } catch (err) {
       addToast('error', 'Workflow Mode Could Not Change', parseApiError(err).message);
     } finally {
@@ -766,6 +759,15 @@ export const DispatcherDashboard: React.FC = () => {
                               <Compass className="w-3 h-3" />
                               <span>{isCurrent ? 'Active on Map' : 'Select'}</span>
                             </button>
+                            {e.status === 'HOSPITAL_SELECTED' && !e.assigned_ambulance_id && (
+                              <Link
+                                to={`/dispatcher/emergency/${e.id}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors"
+                                title="Open this hospital-confirmed case to assign an available ambulance"
+                              >
+                                <Truck className="w-3 h-3" /> Dispatch ambulance
+                              </Link>
+                            )}
                             <Link
                               to={`/dispatcher/emergency/${e.id}`}
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
