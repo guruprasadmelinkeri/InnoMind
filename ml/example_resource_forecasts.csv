@@ -1,0 +1,4 @@
+hospital_id,resource_type,horizon_minutes,current_free,data_age_seconds,release_probability,release_probability_ensemble_std,availability_probability,availability_probability_ensemble_std
+H03,operating_room,15,0,0,0.072,0.0035,0.3926,0.0338
+H03,operating_room,30,0,0,0.1567,0.0115,0.3926,0.0338
+H03,operating_room,60,0,0,0.3274,0.004,0.3926,0.0338

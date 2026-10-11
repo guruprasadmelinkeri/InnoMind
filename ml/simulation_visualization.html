@@ -1,0 +1,131 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hospital Allocation Simulation: Old Engine vs. New Engine (with Model)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .explanation {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .chart-container {
+            position: relative;
+            height: 50vh;
+            width: 100%;
+        }
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hospital Allocation Simulation: Old Engine vs. New Engine (with Model)</h1>
+
+        <div class="explanation">
+            <h2>Explanation of Decisions</h2>
+            <p><strong>Why we chose to show rank over time:</strong> Rank is an intuitive metric that shows how a hospital's relative standing changes as conditions evolve. A lower rank (closer to 1) indicates better allocation priority. This allows us to compare the effectiveness of the old rule‑based engine versus the new model‑enhanced engine across varying patient locations and hospital states.</p>
+            <p><strong>Why we used the model's availability probability:</strong> The MediRoute predictor estimates the likelihood that a resource (e.g., an ICU bed) will be available within a given horizon. This probability directly reflects the resource's readiness, making it a strong indicator for allocation. Combining it with travel distance (which affects how quickly a patient can reach the hospital) captures both clinical and logistical factors.</p>
+            <p><strong>How we combined model score and travel score:</strong> In the new engine, we replaced the resource match component of the old engine with the model's availability probability (scaled 0‑100). We kept the same weights for resource match (45%) and travel (30%) from the old engine, but renormalized them to sum to 1.0 (since we omitted freshness and specialization for simplicity in this comparison). Thus, the new score is 0.6 × model_score + 0.4 × travel_score.</p>
+            <p><strong>Data source:</strong> We used the synthetic resource snapshots (which provide time‑series hospital states) and hospital metadata. Patient location and requirement (ICU bed) were randomized for demonstration.</p>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="allocationChart"></canvas>
+        </div>
+
+        <p><em>Hospital of interest: H10 (lower rank = better allocation priority)</em></p>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('allocationChart').getContext('2d');
+        const allocationChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [np.int64(0), np.int64(600), np.int64(1200), np.int64(1800), np.int64(2400), np.int64(3000), np.int64(3600), np.int64(4200), np.int64(4800), np.int64(5400), np.int64(6000), np.int64(6600), np.int64(7200), np.int64(7800), np.int64(8400)],
+                datasets: [{
+                    label: 'Old Engine Rank (Lower is Better)',
+                    data: [25, 4, 25, 1, 4, 1, 7, 19, 22, 1, 7, 22, 10, 13, 25],
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                    tension: 0.1,
+                    fill: false,
+                    pointRadius: 2,
+                    pointHoverRadius: 4
+                }, {
+                    label: 'New Engine Rank (with Model, Lower is Better)',
+                    data: [4, 13, 10, 16, 10, 10, 1, 28, 16, 7, 10, 16, 22, 7, 10],
+                    borderColor: '#27ae60',
+                    backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                    tension: 0.1,
+                    fill: false,
+                    pointRadius: 2,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Hospital Rank Over Time (Snapshot Tick)'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: 'Rank'
+                        },
+                        // Reverse the axis so that rank 1 is at the top (better)
+                        ticks: {
+                            stepSize: 1,
+                            // We want to show integer ranks
+                            callback: function(value) {
+                                return Number.isInteger(value) ? value : null;
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Snapshot Tick (Time)'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <footer>
+        Generated by MediRoute Simulation Visualization • 2026-10-10 19:31:44
+    </footer>
+</body>
+</html>

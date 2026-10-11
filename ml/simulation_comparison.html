@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediRoute · Full strategy comparison</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{--ink:#172b3b;--muted:#788a98;--line:#e7edf1;--teal:#087f78;--blue:#396cd5;--bg:#f5f7f8;--shadow:0 9px 28px rgba(32,60,76,.055)}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px 'DM Sans',sans-serif}.shell{max-width:1500px;margin:auto;padding:0 32px 48px}.top{height:68px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.brand{font:800 18px Manrope,sans-serif}.brand span{font-weight:500;color:#81919a}.btn{display:inline-flex;align-items:center;text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:7px;padding:9px 12px;color:#536977;font-size:12px;font-weight:700}.main{padding-top:28px}.eyebrow{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--teal);font-weight:700}.heading{display:flex;justify-content:space-between;align-items:end;margin:7px 0 18px}.heading h1{font:700 28px Manrope,sans-serif;margin:0}.heading p{color:var(--muted);margin:6px 0 0;font-size:12px}.status{background:white;border:1px solid var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted)}.card{background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);margin-top:14px;overflow:hidden}.card-head{padding:15px 18px;border-bottom:1px solid var(--line)}.card-head h2{font:700 14px Manrope,sans-serif;margin:0}.card-head p{font-size:11px;color:var(--muted);margin:4px 0 0}.content{padding:18px}.hero{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{border:1px solid var(--line);border-radius:9px;padding:13px}.metric label{display:block;text-transform:uppercase;letter-spacing:.6px;color:#84939b;font-size:9px;font-weight:700}.metric strong{display:block;margin-top:5px;font:700 21px Manrope,sans-serif}.compare{display:grid;grid-template-columns:1fr 1fr;gap:14px}.method{border:1px solid var(--line);border-radius:10px;padding:17px;background:#fbfcfc}.method.model{border-top:3px solid var(--teal)}.method.rules{border-top:3px solid var(--blue)}.method h3{margin:0;font:700 15px Manrope,sans-serif}.method p{color:var(--muted);font-size:11px;line-height:1.55;margin:7px 0 14px}.method-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.method-metrics div{background:#fff;border:1px solid #edf1f3;border-radius:7px;padding:9px}.method-metrics label{display:block;color:#84939b;font-size:9px;text-transform:uppercase}.method-metrics b{display:block;margin-top:4px;font:700 15px Manrope,sans-serif}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:780px}th{text-align:left;text-transform:uppercase;letter-spacing:.7px;color:#8998a0;font-size:9px;background:#fafcfc;padding:11px;border-bottom:1px solid var(--line);white-space:nowrap}td{padding:10px 11px;border-bottom:1px solid #eff2f4;font-size:11px;color:#526673;white-space:nowrap}tr:last-child td{border-bottom:0}.mono{font:500 10px 'DM Mono',monospace}.hospital{font-weight:700;color:#28404d}.yes{color:#218565;font-weight:700}.no{color:#a46828;font-weight:700}.interpret{background:#f1f6f5;border-radius:9px;padding:16px 18px}.interpret h3{font:700 13px Manrope,sans-serif;margin:0 0 8px}.interpret ul{margin:0;padding-left:18px;display:grid;gap:7px;color:#536875;font-size:12px;line-height:1.55}.findings{display:grid;grid-template-columns:1fr 1fr;gap:10px}.finding{background:white;border:1px solid #e6eeec;border-radius:8px;padding:13px}.finding h4{font:700 11px Manrope,sans-serif;margin:0 0 6px;color:#28404d}.finding p{font-size:11px;line-height:1.55;color:#586d79;margin:0}.resource-breakdown{margin-top:16px}.resource-breakdown h4{font:700 12px Manrope,sans-serif;margin:0 0 7px}.resource-breakdown table{min-width:620px}.note{font-size:10px;line-height:1.5;color:#89979f;margin-top:12px}.error{display:none;color:#a94d43;background:#fff0ec;padding:11px;border-radius:7px;margin-bottom:12px;font-size:12px}@media(max-width:850px){.findings{grid-template-columns:1fr}.shell{padding:0 16px 32px}.compare{grid-template-columns:1fr}.hero{grid-template-columns:1fr 1fr}.heading{align-items:start;gap:10px;flex-direction:column}}@media(max-width:500px){.method-metrics{grid-template-columns:1fr 1fr}.content{padding:12px}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top"><div class="brand">MediRoute <span>/ Full comparison</span></div><a class="btn" href="/">← Back to allocation lab</a></header>
+    <main class="main">
+      <div class="eyebrow">Allocation analysis · latest run</div>
+      <div class="heading"><div><h1>Model vs rule-based allocation</h1><p>Run-level outcomes, patient-by-patient decisions, releases, and a plain-language interpretation.</p></div></div>
+      <div id="error" class="error"></div>
+      <div id="loading" class="status">Loading the latest simulation results…</div>
+      <div id="report" hidden>
+        <section class="hero" id="hero"></section>
+        <section class="card"><div class="card-head"><h2>Strategy overview</h2><p>How each method selected hospitals and handled resource turnover.</p></div><div class="content compare" id="strategies"></div></section>
+        <section class="card"><div class="card-head"><h2>Interpretation</h2><p>What the observed differences mean for this synthetic scenario.</p></div><div class="content"><div id="interpretation" class="interpret"></div><div class="note">This is a synthetic replay, not a clinical outcome study. Both strategies reserve only units observed as free. The demo releases bookings after its simulated 30–60 minute service interval. Model readiness is a forecast, not a guarantee, and the score formulas are not directly comparable.</div></div></section>
+        <section class="card"><div class="card-head"><h2>Patient-by-patient decisions</h2><p>Every request, chosen hospital, score, travel estimate, and destination agreement.</p></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Patient</th><th>Resource</th><th>Snapshot time</th><th>Model destination</th><th>Model travel</th><th>Model readiness</th><th>Model score</th><th>Rule destination</th><th>Rule travel</th><th>Rule score</th><th>Same hospital</th></tr></thead><tbody id="patients"></tbody></table></div></section>
+        <section class="card"><div class="card-head"><h2>Resource turnover events</h2><p>Simulated service completions return reserved units before later arrivals.</p></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Strategy</th><th>Hospital</th><th>Resource</th><th>Units released</th><th>Following patient</th></tr></thead><tbody id="releases"></tbody></table></div></section>
+        <section class="card"><div class="card-head"><h2>How the strategies work</h2><p>Interpret the comparison in light of each method’s decision rule.</p></div><div class="content compare"><article class="method model"><h3>Forecast model</h3><p>Uses learned availability and release probabilities to estimate readiness, then combines readiness and travel in its ranking. It still requires enough observed free units to reserve.</p><div class="note">Readiness score = 60% forecast readiness + 40% travel score.</div></article><article class="method rules"><h3>Rule-based allocator</h3><p>Requires current stock, then ranks eligible hospitals with fixed resource-match, travel, freshness, and specialization weights.</p><div class="note">Score = 45% resource match + 30% travel + 15% freshness + 10% specialization.</div></article></div></section>
+      </div>
+    </main>
+  </div>
+  <script>
+    const esc=value=>String(value??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const time=minute=>`Day ${String(Math.floor(minute/1440)+1).padStart(2,'0')} · ${String(Math.floor(minute%1440/60)).padStart(2,'0')}:${String(minute%60).padStart(2,'0')}`;
+    const resourceNames={icu_bed:'ICU bed',general_bed:'General bed',ventilator:'Ventilator',operating_room:'Operating room'};
+    const percent=(value,total)=>`${value} / ${total} (${(100*value/Math.max(1,total)).toFixed(1)}%)`;
+    function strategyCard(name,kind,metrics,releases,active,agreement,total){
+      const model=kind==='model';
+      const entries=[['Allocated',percent(metrics.allocated,total)],['Unallocated',metrics.unallocated],['Units reserved',metrics.units_reserved],['Units released',releases],['Still reserved',active],['Mean travel',`${metrics.mean_travel_minutes} min`],['Mean score',metrics.mean_winning_score],['Eligible options',metrics.eligible_candidate_count]];
+      if(model)entries.push(['Mean candidate readiness',`${metrics.mean_candidate_readiness}%`]);
+      else entries.push(['Same destination',`${agreement}/${total}`]);
+      return `<article class="method ${model?'model':'rules'}"><h3>${name}</h3><p>${model?'Learned availability and release forecasts influence ranking while observed capacity gates reservations.':'Current-stock eligibility followed by fixed weighted scoring.'}</p><div class="method-metrics">${entries.map(([label,value])=>`<div><label>${esc(label)}</label><b>${esc(value)}</b></div>`).join('')}</div></article>`;
+    }
+    function render(data){
+      const total=data.summary.request_count,summary=data.summary,mm=summary.model_metrics,bm=summary.backend_metrics;
+      const last=data.timeline[data.timeline.length-1];
+      const modelReleased=data.timeline.reduce((n,s)=>n+(s.model.releases||[]).reduce((sum,event)=>sum+event.units,0),0);
+      const rulesReleased=data.timeline.reduce((n,s)=>n+(s.backend.releases||[]).reduce((sum,event)=>sum+event.units,0),0);
+      const modelActive=last?.model.active_allocations||0,rulesActive=last?.backend.active_allocations||0;
+      const span=summary.end_minute-summary.start_minute;
+      const same=summary.agreement;
+      const different=data.timeline.filter(s=>s.model.winner&&s.backend.winner&&s.model.winner.hospital_id!==s.backend.winner.hospital_id).length;
+      const missing=Math.max(0,total-same-different);
+      document.getElementById('hero').innerHTML=[
+        ['Patients',total],['Simulation window',`${span} min`],['Snapshots',new Set(data.timeline.map(s=>s.tick)).size],['Same-hospital choices',`${same}/${total}`]
+      ].map(([label,value])=>`<div class="metric"><label>${esc(label)}</label><strong>${esc(value)}</strong></div>`).join('');
+      document.getElementById('strategies').innerHTML=strategyCard('Forecast model','model',mm,modelReleased,modelActive,same,total)+strategyCard('Rule-based allocator','rules',bm,rulesReleased,rulesActive,same,total);
+      const coverage=mm.allocated===bm.allocated
+        ? `Both strategies allocated ${mm.allocated} of ${total} patients (${mm.allocation_rate}%).`
+        : `${mm.allocated>bm.allocated?'The model':'The rule-based allocator'} allocated more patients: ${mm.allocated} of ${total} versus ${bm.allocated} of ${total}.`;
+      const travelGap=Math.abs(mm.mean_travel_minutes-bm.mean_travel_minutes);
+      const travelFinding=mm.allocated&&bm.allocated
+        ? travelGap<0.1?`Average travel was nearly equal (${mm.mean_travel_minutes} minutes for the model and ${bm.mean_travel_minutes} for rules).`:`${mm.mean_travel_minutes<bm.mean_travel_minutes?'Model':'Rule-based'} selections averaged ${Math.min(mm.mean_travel_minutes,bm.mean_travel_minutes)} minutes, ${travelGap.toFixed(1)} minutes less than the other strategy. This reflects chosen destinations in this run, not overall transport quality.`
+        : 'Travel averages cannot be compared because one strategy made no allocations.';
+      const selectedReady=data.timeline.map(s=>s.model.winner?.detail?.readiness).filter(value=>value!=null);
+      const selectedReadiness=selectedReady.length?(selectedReady.reduce((a,b)=>a+b,0)/selectedReady.length).toFixed(1):null;
+      const readinessFinding=selectedReadiness==null?'The model made no allocations with readiness estimates.':`For its selected hospitals, the model’s average estimated readiness was ${selectedReadiness}%. This is a model probability-derived score, not a guarantee that a bed will be available at arrival.`;
+      const turnoverFinding=`The simulator released ${modelReleased} units in the model ledger and ${rulesReleased} in the rule ledger. That is ${percent(modelReleased,mm.units_reserved)} and ${percent(rulesReleased,bm.units_reserved)} of each strategy’s reservations; ${modelActive} and ${rulesActive} units were still held at the end. A completed release permits later patients to compete for that capacity.`;
+      const destinationFinding=`The methods chose the same hospital for ${same} patients, chose different hospitals for ${different}, and at least one method did not allocate ${missing}. Use the patient table below to see which requests diverged and compare their travel, readiness, and scores.`;
+      const scoreFinding=`Mean winning scores were ${mm.mean_winning_score} for the model and ${bm.mean_winning_score} for rules. These use different formulas (forecast readiness/travel versus current resource match/travel/freshness/specialization), so the larger number does not mean that strategy performed better.`;
+      const resourceStats={};
+      data.timeline.forEach(step=>{
+        const key=step.request.resource_type;
+        const stat=resourceStats[key]||(resourceStats[key]={requests:0,model:0,rules:0,same:0,modelTravel:0,ruleTravel:0,modelTravelN:0,ruleTravelN:0,modelReleased:0,ruleReleased:0});
+        stat.requests++;if(step.model.winner){stat.model++;stat.modelTravel+=step.model.winner.travel_minutes;stat.modelTravelN++}if(step.backend.winner){stat.rules++;stat.ruleTravel+=step.backend.winner.travel_minutes;stat.ruleTravelN++}
+        if(step.model.winner&&step.backend.winner&&step.model.winner.hospital_id===step.backend.winner.hospital_id)stat.same++;
+        for(const event of step.model.releases||[])stat.modelReleased+=event.units;
+        for(const event of step.backend.releases||[])stat.ruleReleased+=event.units;
+      });
+      const resourceRows=Object.entries(resourceStats).map(([resource,stat])=>`<tr><td>${esc(resourceNames[resource]||resource)}</td><td>${stat.requests}</td><td>${stat.model}/${stat.requests}</td><td>${stat.rules}/${stat.requests}</td><td>${stat.same}/${stat.requests}</td><td>${stat.modelTravelN?(stat.modelTravel/stat.modelTravelN).toFixed(1)+' min':'—'}</td><td>${stat.ruleTravelN?(stat.ruleTravel/stat.ruleTravelN).toFixed(1)+' min':'—'}</td><td>${stat.modelReleased} / ${stat.ruleReleased}</td></tr>`).join('');
+      document.getElementById('interpretation').innerHTML=`<h3>Detailed reading of this run</h3><div class="findings">
+        <article class="finding"><h4>Allocation coverage</h4><p>${esc(coverage)} Unallocated requests show where current capacity or the eligibility rules constrained placement.</p></article>
+        <article class="finding"><h4>Travel trade-off</h4><p>${esc(travelFinding)}</p></article>
+        <article class="finding"><h4>Model readiness</h4><p>${esc(readinessFinding)} The rule-based method does not calculate a readiness forecast.</p></article>
+        <article class="finding"><h4>Capacity turnover</h4><p>${esc(turnoverFinding)}</p></article>
+        <article class="finding"><h4>Destination agreement</h4><p>${esc(destinationFinding)}</p></article>
+        <article class="finding"><h4>Score interpretation</h4><p>${esc(scoreFinding)}</p></article>
+      </div><div class="resource-breakdown"><h4>Results by resource type</h4><div class="table-wrap"><table><thead><tr><th>Resource</th><th>Requests</th><th>Model allocated</th><th>Rules allocated</th><th>Same hospital</th><th>Model travel avg</th><th>Rules travel avg</th><th>Units released · model/rules</th></tr></thead><tbody>${resourceRows}</tbody></table></div></div>`;
+      
+      document.getElementById('patients').innerHTML=data.timeline.map((step,index)=>{
+        const m=step.model.winner,b=step.backend.winner,agree=!!m&&!!b&&m.hospital_id===b.hospital_id;
+        const destination=w=>w?`<span class="hospital">${esc(w.hospital_id)}</span> · ${w.reserved_this_request??step.request.quantity} unit${(w.reserved_this_request??step.request.quantity)===1?'':'s'}`:'<span class="no">No allocation</span>';
+        const ready=m?.detail?.readiness??m?.detail?.availability_probability;
+        return `<tr><td class="mono">${index+1}</td><td class="hospital">${esc(step.request.patient_id)}</td><td>${esc(resourceNames[step.request.resource_type]||step.request.resource_type)} × ${step.request.quantity}</td><td class="mono">${esc(time(step.minute))}</td><td>${destination(m)}</td><td>${m?`${m.travel_minutes} min`:'—'}</td><td>${ready==null?'—':`${ready.toFixed(1)}%`}</td><td>${m?m.score.toFixed(1):'—'}</td><td>${destination(b)}</td><td>${b?`${b.travel_minutes} min`:'—'}</td><td>${b?b.score.toFixed(1):'—'}</td><td class="${agree?'yes':'no'}">${agree?'Agree':'Differ'}</td></tr>`;
+      }).join('');
+      const releases=[];
+      data.timeline.forEach((step,index)=>{for(const kind of ['model','backend'])for(const event of step[kind].releases||[])releases.push({...event,strategy:kind==='model'?'Forecast model':'Rule-based',following:index<total?data.timeline[index].request.patient_id:'—'});});
+      document.getElementById('releases').innerHTML=releases.length?releases.map(event=>`<tr><td class="mono">${esc(time(event.minute))}</td><td>${esc(event.strategy)}</td><td class="hospital">${esc(event.hospital_id)}</td><td>${esc(resourceNames[event.resource_type]||event.resource_type)}</td><td>${event.units}</td><td>${esc(event.following)}</td></tr>`).join(''):'<tr><td colspan="6">No units were released during this run.</td></tr>';
+      document.getElementById('loading').hidden=true;document.getElementById('report').hidden=false;
+    }
+    fetch('/api/comparison').then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.detail||'Could not load comparison');render(body)}).catch(error=>{document.getElementById('loading').hidden=true;const node=document.getElementById('error');node.textContent=error.message;node.style.display='block'});
+  </script>
+</body>
+</html>
