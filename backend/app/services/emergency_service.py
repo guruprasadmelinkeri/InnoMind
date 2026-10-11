@@ -76,7 +76,8 @@ def create_emergency_case(db: Session, emergency_in: EmergencyCaseCreate) -> Eme
     )
 
     # Default workflow runs automatically; dispatcher overrides remain available for exceptions.
-    from app.services.automation_service import schedule_automated_workflow
+    from app.services.automation_service import configure_workflow_mode_from_hospitals, schedule_automated_workflow
+    configure_workflow_mode_from_hospitals(db)
     schedule_automated_workflow(emergency.id)
 
     return emergency

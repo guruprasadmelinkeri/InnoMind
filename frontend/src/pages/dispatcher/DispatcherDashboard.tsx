@@ -56,6 +56,8 @@ export const DispatcherDashboard: React.FC = () => {
   const [selectedHospitalId, setSelectedHospitalId] = useState<number | null>(null);
   const [submittingHospitalId, setSubmittingHospitalId] = useState<number | null>(null);
   const [autoModeRunning, setAutoModeRunning] = useState(false);
+  const [workflowMode, setWorkflowMode] = useState<'MANUAL' | 'AUTO'>('AUTO');
+  const [workflowModeUpdating, setWorkflowModeUpdating] = useState(false);
 
   const { addToast } = useToast();
 
@@ -94,6 +96,12 @@ export const DispatcherDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData(true);
+  }, []);
+
+  useEffect(() => {
+    apiClient.get<{ mode: 'MANUAL' | 'AUTO' }>('/emergencies/automation/mode')
+      .then(({ data }) => setWorkflowMode(data.mode))
+      .catch(() => undefined);
   }, []);
 
   // Run Allocation Recommendations when emergency is selected
@@ -162,6 +170,8 @@ export const DispatcherDashboard: React.FC = () => {
   const handleRunAutoMode = async () => {
     setAutoModeRunning(true);
     try {
+      await apiClient.put('/emergencies/automation/mode', { mode: 'AUTO' });
+      setWorkflowMode('AUTO');
       const { data } = await apiClient.post<{ status: string; scheduled_emergencies: number }>(
         '/emergencies/automation/run-pending'
       );
@@ -180,6 +190,36 @@ export const DispatcherDashboard: React.FC = () => {
       addToast('error', 'Auto Mode Could Not Start', parsed.message);
     } finally {
       setAutoModeRunning(false);
+    }
+  };
+
+  const handleWorkflowModeChange = async (mode: 'MANUAL' | 'AUTO') => {
+    if (mode === workflowMode || workflowModeUpdating) return;
+    setWorkflowModeUpdating(true);
+    try {
+      const { data } = await apiClient.put<{ mode: 'MANUAL' | 'AUTO'; hospitals_updated: number }>(
+        '/emergencies/automation/mode', { mode }
+      );
+      setWorkflowMode(data.mode);
+      const automationRun = mode === 'AUTO'
+        ? (await apiClient.post<{ status: string; scheduled_emergencies: number }>('/emergencies/automation/run-pending')).data
+        : null;
+      addToast(
+        'success',
+        mode === 'MANUAL' ? 'Manual Demo Ready' : automationRun?.scheduled_emergencies
+          ? 'Automatic Workflow Started'
+          : 'Automatic Workflow Enabled',
+        mode === 'MANUAL'
+          ? 'New cases will wait for dispatcher and hospital actions. Ambulance arrival and handoff will also wait for manual updates.'
+          : automationRun?.scheduled_emergencies
+            ? `Automatic allocation enabled for ${data.hospitals_updated} hospitals. Processing ${automationRun.scheduled_emergencies} waiting case(s).`
+            : `Automatic allocation enabled for ${data.hospitals_updated} hospitals. New cases will progress automatically.`
+      );
+      if (mode === 'MANUAL') void fetchData(false);
+    } catch (err) {
+      addToast('error', 'Workflow Mode Could Not Change', parseApiError(err).message);
+    } finally {
+      setWorkflowModeUpdating(false);
     }
   };
 
@@ -290,6 +330,14 @@ export const DispatcherDashboard: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Workflow demo mode">
+            <button type="button" onClick={() => void handleWorkflowModeChange('MANUAL')} disabled={workflowModeUpdating} aria-pressed={workflowMode === 'MANUAL'} className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors disabled:opacity-60 ${workflowMode === 'MANUAL' ? 'bg-amber-100 text-amber-900' : 'text-slate-500 hover:bg-slate-50'}`}>
+              {workflowModeUpdating && workflowMode !== 'MANUAL' ? 'Updating…' : 'Manual demo'}
+            </button>
+            <button type="button" onClick={() => void handleWorkflowModeChange('AUTO')} disabled={workflowModeUpdating} aria-pressed={workflowMode === 'AUTO'} className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors disabled:opacity-60 ${workflowMode === 'AUTO' ? 'bg-emerald-100 text-emerald-900' : 'text-slate-500 hover:bg-slate-50'}`}>
+              Automatic
+            </button>
+          </div>
           <button
             type="button"
             onClick={handleRunAutoMode}
@@ -324,6 +372,13 @@ export const DispatcherDashboard: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {workflowMode === 'MANUAL' && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950">
+          <div className="font-bold">Manual demo mode is on</div>
+          <p className="mt-1 text-xs leading-5 text-amber-900">New requests pause for the walkthrough: open the case and find/send hospital requests, accept one from that hospital’s Requests page, assign an ambulance and mark it arrived in the case, then start and complete handoff from the Hospital dashboard. The user dashboard continues receiving live status updates.</p>
+        </section>
+      )}
 
       {error && <ErrorAlert message={error} onRetry={fetchData} />}
 

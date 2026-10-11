@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,9 @@ from app.services.automation_service import (
     enable_auto_mode_for_emergencies,
     run_automated_emergency_workflow,
     schedule_automated_workflow,
+    get_workflow_mode,
+    set_workflow_mode,
+    configure_workflow_mode_from_hospitals,
 )
 from app.services.allocation import rank_hospitals
 from app.services.reservation import (
@@ -33,9 +36,37 @@ from app.core.auth import require_roles
 from app.models.account import Account
 from app.models.emergency import EmergencyCase, EmergencyStatus
 from app.models.allocation_request import AllocationRequest, AllocationRequestStatus
+from app.models.hospital import Hospital
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/emergencies", tags=["Emergencies"])
+
+
+class WorkflowModeUpdate(BaseModel):
+    mode: Literal["MANUAL", "AUTO"]
+
+
+@router.get("/automation/mode", summary="Get dispatcher workflow mode")
+def get_automation_mode(
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN")),
+):
+    return {"mode": configure_workflow_mode_from_hospitals(db)}
+
+
+@router.put("/automation/mode", summary="Set dispatcher workflow mode")
+def update_automation_mode(
+    update: WorkflowModeUpdate,
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN")),
+):
+    enabled = update.mode == "AUTO"
+    hospitals = db.query(Hospital).order_by(Hospital.id).with_for_update().all()
+    for hospital in hospitals:
+        hospital.automatic_resource_allocation = enabled
+    db.commit()
+    set_workflow_mode(update.mode)
+    return {"mode": update.mode, "hospitals_updated": len(hospitals)}
 
 @router.post("/automation/run-pending", summary="Run automatic workflow for all pending emergencies")
 def run_pending_automation(
@@ -43,6 +74,7 @@ def run_pending_automation(
     account: Account = Depends(require_roles("ADMIN")),
 ):
     """Run one-click admin automation for pending and hospital-selected emergencies."""
+    set_workflow_mode("AUTO")
     pending_ids = [row[0] for row in db.query(EmergencyCase.id).filter(
         EmergencyCase.status.in_([EmergencyStatus.CREATED, EmergencyStatus.SEARCHING]),
         ~EmergencyCase.allocation_requests.any(

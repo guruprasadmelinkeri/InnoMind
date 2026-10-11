@@ -30,6 +30,26 @@ _batch_emergency_ids: Set[int] = set()
 _batch_timer_lock = False  # Simple reentrancy guard
 _batch_auto_mode = False
 _auto_mode_emergency_ids: Set[int] = set()
+_workflow_mode = "AUTO"
+
+
+def set_workflow_mode(mode: str) -> None:
+    global _workflow_mode
+    _workflow_mode = mode
+
+
+def get_workflow_mode() -> str:
+    return _workflow_mode
+
+
+def configure_workflow_mode_from_hospitals(db: Session) -> str:
+    """Restore the global demo mode from the existing per-hospital settings."""
+    hospitals = db.query(Hospital.automatic_resource_allocation).all()
+    if hospitals and all(not enabled for (enabled,) in hospitals):
+        set_workflow_mode("MANUAL")
+    elif hospitals and all(enabled for (enabled,) in hospitals):
+        set_workflow_mode("AUTO")
+    return _workflow_mode
 
 
 def enable_auto_mode_for_emergencies(emergency_ids: Set[int]) -> None:
@@ -44,6 +64,9 @@ def schedule_automated_workflow(emergency_id: int, auto_mode: bool = False) -> N
     then process all pending emergencies together.
     """
     global _batch_timer, _batch_emergency_ids, _batch_auto_mode
+
+    if _workflow_mode == "MANUAL" and not auto_mode:
+        return
 
     # Add emergency to the set
     _batch_emergency_ids.add(emergency_id)
@@ -75,6 +98,9 @@ def _run_batch_workflow() -> None:
     try:
         db = SessionLocal()
         try:
+            configure_workflow_mode_from_hospitals(db)
+            if _workflow_mode == "MANUAL" and not auto_mode:
+                return
             # Collect emergencies that are still pending (CREATED or SEARCHING) and have no accepted allocation request
             pending_emergencies = (
                 db.query(EmergencyCase)
@@ -293,6 +319,9 @@ def _schedule_auto_arrival_update(emergency_id: int, ambulance_id: int, delay_se
     def _arrival_callback() -> None:
         db = SessionLocal()
         try:
+            configure_workflow_mode_from_hospitals(db)
+            if _workflow_mode == "MANUAL":
+                return
             emergency = db.query(EmergencyCase).filter(EmergencyCase.id == emergency_id).first()
             ambulance = db.query(Ambulance).filter(Ambulance.id == ambulance_id).first()
             if not emergency or not ambulance:
@@ -399,6 +428,10 @@ def auto_assign_ambulance_for_emergency(db: Session, emergency_id: int) -> Dict[
     emergency = db.query(EmergencyCase).filter(EmergencyCase.id == emergency_id).first()
     if not emergency:
         raise HTTPException(status_code=404, detail=f"Emergency case with id {emergency_id} not found")
+
+    configure_workflow_mode_from_hospitals(db)
+    if _workflow_mode == "MANUAL":
+        return {"status": "manual_dispatch_pending", "reason": "workflow_mode_is_manual"}
 
     if emergency.assigned_ambulance_id:
         if emergency.status == EmergencyStatus.EN_ROUTE:

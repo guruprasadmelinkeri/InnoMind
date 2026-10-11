@@ -1,6 +1,7 @@
 from typing import List
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -13,6 +14,34 @@ from app.models.account import Account
 from app.models.resource import HospitalResource
 
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
+
+
+class AutomaticAllocationUpdate(BaseModel):
+    enabled: bool
+
+
+@router.patch("/automatic-allocation", summary="Set automatic allocation for every hospital")
+def set_automatic_allocation_for_all(
+    update: AutomaticAllocationUpdate,
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_roles("ADMIN")),
+):
+    hospitals = db.query(hospital_service.Hospital).order_by(hospital_service.Hospital.id).with_for_update().all()
+    for hospital in hospitals:
+        hospital.automatic_resource_allocation = update.enabled
+    db.commit()
+
+    for hospital in hospitals:
+        broadcast_event_sync(
+            WebSocketEvents.HOSPITAL_STATUS_UPDATED,
+            {
+                "hospital_id": hospital.id,
+                "name": hospital.name,
+                "status": hospital.status,
+                "automatic_resource_allocation": update.enabled,
+            },
+        )
+    return {"enabled": update.enabled, "hospitals_updated": len(hospitals)}
 
 @router.post("/refill-capacity", summary="Restore usable available capacity for demonstrations")
 def refill_available_capacity(
