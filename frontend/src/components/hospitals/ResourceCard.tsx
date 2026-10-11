@@ -4,12 +4,12 @@ import { Bed, Activity, Stethoscope, Wind, ShieldAlert, HeartPulse, Clock } from
 
 export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resource }) => {
   const icons: Record<string, React.ReactNode> = {
-    ICU_BED: <Activity className="w-5 h-5 text-rose-400" />,
-    GENERAL_BED: <Bed className="w-5 h-5 text-sky-400" />,
-    VENTILATOR: <Wind className="w-5 h-5 text-amber-400" />,
-    OXYGEN_BED: <HeartPulse className="w-5 h-5 text-emerald-400" />,
-    TRAUMA_BED: <ShieldAlert className="w-5 h-5 text-purple-400" />,
-    OPERATING_ROOM: <Stethoscope className="w-5 h-5 text-indigo-400" />,
+    ICU_BED: <Activity className="w-5 h-5 text-teal-700" />,
+    GENERAL_BED: <Bed className="w-5 h-5 text-teal-700" />,
+    VENTILATOR: <Wind className="w-5 h-5 text-teal-700" />,
+    OXYGEN_BED: <HeartPulse className="w-5 h-5 text-teal-700" />,
+    TRAUMA_BED: <ShieldAlert className="w-5 h-5 text-teal-700" />,
+    OPERATING_ROOM: <Stethoscope className="w-5 h-5 text-teal-700" />,
   };
 
   const labels: Record<string, string> = {
@@ -31,12 +31,12 @@ export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resourc
   const availablePercent = allocatableTotal > 0 ? Math.round((resource.available / allocatableTotal) * 100) : 0;
 
   return (
-    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 shadow-xl transition-all space-y-4">
+    <div className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-teal-200 hover:shadow-md shadow-sm transition-all space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">{icon}</div>
+          <div className="p-2.5 bg-teal-50 rounded-xl border border-teal-100">{icon}</div>
           <div>
-            <h4 className="font-bold text-slate-100 text-sm">{label}</h4>
+            <h4 className="font-bold text-slate-900 text-sm">{label}</h4>
             <div className="flex flex-col items-start">
               <span className="text-[10px] uppercase font-semibold text-slate-400">
                 Total: {resource.total} (Buffer: {resource.buffer})
@@ -51,14 +51,14 @@ export const ResourceCard: React.FC<{ resource: HospitalResource }> = ({ resourc
         </div>
 
         <div className="text-right">
-          <span className="text-2xl font-black text-emerald-400">{resource.available}</span>
+          <span className="text-2xl font-bold text-teal-800">{resource.available}</span>
           <span className="text-xs text-slate-500 font-medium"> / {resource.total - resource.buffer}</span>
         </div>
       </div>
 
       {/* Progress Bar */}
       <div className="space-y-1.5">
-        <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden flex border border-slate-800">
+        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden flex border border-slate-200">
           <div
             className="bg-emerald-500 h-full transition-all duration-500"
             style={{ width: `${availablePercent}%` }}

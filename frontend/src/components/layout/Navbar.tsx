@@ -32,20 +32,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, [location.pathname, selectedHospitalId, onSelectHospital]);
 
   return (
-    <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
+    <header className="border-b border-slate-200 bg-white/95 backdrop-blur-md sticky top-0 z-40 shadow-sm shadow-slate-900/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Logo & Brand */}
         <div className="flex items-center gap-4">
           <Link to="/dispatcher" className="flex items-center gap-3 group">
-            <div className="p-2.5 bg-gradient-to-tr from-rose-600 to-amber-500 rounded-2xl shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform duration-200">
+            <div className="p-2.5 bg-teal-700 rounded-xl shadow-sm shadow-teal-900/15 group-hover:scale-105 transition-transform duration-200">
               <Ambulance className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg font-extrabold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent tracking-tight">
+                <span className="text-lg font-extrabold text-slate-900 tracking-tight">
                   MediRoute
                 </span>
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-teal-50 text-teal-800 border border-teal-200">
                   PROTOTYPE
                 </span>
               </div>
@@ -85,11 +85,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             to="/dispatcher"
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
               !isHospitalRoute && location.pathname !== '/user'
-                ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            <ShieldAlert className="w-4 h-4 text-rose-400" />
+            <ShieldAlert className="w-4 h-4 text-teal-700" />
             <span className="hidden sm:inline">Dispatcher Command Center</span>
           </Link>
 
@@ -97,17 +97,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             to="/user"
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
               location.pathname === '/user'
-                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            <Ambulance className="w-4 h-4 text-emerald-400" />
+            <Ambulance className="w-4 h-4 text-teal-700" />
             <span className="hidden sm:inline">User Dashboard</span>
           </Link>
 
           {/* Hospital Staff View Selector */}
-          <div className="relative flex items-center gap-2 bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-1.5 text-xs">
-            <Building2 className="w-4 h-4 text-sky-400 shrink-0" />
+          <div className="relative flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs">
+            <Building2 className="w-4 h-4 text-blue-700 shrink-0" />
             <span className="text-slate-400 font-medium hidden md:inline">Hospital Staff:</span>
             <div className="relative flex items-center">
               <select
@@ -117,17 +117,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onSelectHospital(id);
                   navigate(`/hospital/${id}`);
                 }}
-                className="bg-transparent text-slate-100 font-semibold pr-6 focus:outline-none cursor-pointer appearance-none"
+                className="bg-transparent text-slate-800 font-semibold pr-6 focus:outline-none cursor-pointer appearance-none"
               >
                 {hospitals.length === 0 ? (
                   <>
-                    <option value={1} className="bg-slate-900 text-slate-100">CityCare Hospital (#1)</option>
-                    <option value={2} className="bg-slate-900 text-slate-100">Metro General Hospital (#2)</option>
-                    <option value={3} className="bg-slate-900 text-slate-100">Apex Trauma Center (#3)</option>
+                    <option value={1} className="bg-white text-slate-900">CityCare Hospital (#1)</option>
+                    <option value={2} className="bg-white text-slate-900">Metro General Hospital (#2)</option>
+                    <option value={3} className="bg-white text-slate-900">Apex Trauma Center (#3)</option>
                   </>
                 ) : (
                   hospitals.map((h) => (
-                    <option key={h.id} value={h.id} className="bg-slate-900 text-slate-100">
+                    <option key={h.id} value={h.id} className="bg-white text-slate-900">
                       {h.name} (#{h.id})
                     </option>
                   ))

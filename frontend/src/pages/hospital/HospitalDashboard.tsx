@@ -191,27 +191,27 @@ export const HospitalDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* Top Banner Header */}
-      <div className="p-6 md:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl relative overflow-hidden">
-        <div className="absolute -top-24 -right-24 w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="p-6 md:p-8 rounded-2xl bg-white border border-slate-200 shadow-sm relative overflow-hidden">
+        <div className="absolute -top-24 -right-24 w-72 h-72 bg-teal-500/5 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl md:text-3xl font-black text-slate-100 flex items-center gap-3">
-                <Building2 className="w-8 h-8 text-emerald-400" />
+              <h1 className="text-2xl md:text-3xl font-bold text-slate-900 flex items-center gap-3">
+                <Building2 className="w-8 h-8 text-teal-700" />
                 {hospital.name}
               </h1>
               <span
                 className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${
                   hospital.status === 'Active'
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
                 }`}
               >
                 {hospital.status}
               </span>
               {hospital.trauma_center && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 border border-amber-500/30 text-amber-300">
-                  <ShieldCheck className="w-4 h-4 text-amber-400" /> Trauma Level I Center
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 border border-amber-200 text-amber-900">
+                  <ShieldCheck className="w-4 h-4 text-amber-700" /> Trauma Level I Center
                 </span>
               )}
             </div>
@@ -232,9 +232,9 @@ export const HospitalDashboard: React.FC = () => {
             <button
               onClick={() => fetchData(true)}
               disabled={refreshing}
-              className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all flex items-center gap-2 text-xs font-semibold border border-slate-700 disabled:opacity-50"
+              className="p-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-200 disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-teal-700' : ''}`} />
               Refresh Status
             </button>
             <button
@@ -242,8 +242,8 @@ export const HospitalDashboard: React.FC = () => {
               disabled={updatingAutoAllocation}
               className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all disabled:opacity-50 ${
                 hospital.automatic_resource_allocation
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  ? 'bg-teal-700 hover:bg-teal-800 text-white border-teal-700'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
               }`}
             >
               {updatingAutoAllocation ? (
@@ -256,7 +256,7 @@ export const HospitalDashboard: React.FC = () => {
             </button>
             <Link
               to={isAdmin ? `/dispatcher/hospitals/${hospital.id}/requests` : `/hospital/${hospital.id}/requests`}
-              className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 transition-all flex items-center gap-2"
+              className="px-5 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm shadow-sm transition-colors flex items-center gap-2"
             >
               <Inbox className="w-4 h-4" /> Incoming Requests
             </Link>
@@ -266,40 +266,40 @@ export const HospitalDashboard: React.FC = () => {
 
       {/* Overview Statistics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>Total Bed Capacity</span>
             <Bed className="w-4 h-4 text-slate-500" />
           </div>
-          <p className="text-3xl font-black text-slate-100">{totalCapacity}</p>
+          <p className="text-3xl font-bold text-slate-900">{totalCapacity}</p>
           <p className="text-[11px] text-slate-500">Configured across {resources.length} resource types</p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>Available Beds</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <CheckCircle2 className="w-4 h-4 text-teal-700" />
           </div>
-          <p className="text-3xl font-black text-emerald-400">{totalAvailable}</p>
-          <p className="text-[11px] text-emerald-500/80 font-medium">Ready for immediate dispatch</p>
+          <p className="text-3xl font-bold text-teal-800">{totalAvailable}</p>
+          <p className="text-[11px] text-emerald-800 font-medium">Ready for immediate dispatch</p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>Active Reservations</span>
             <Activity className="w-4 h-4 text-amber-400" />
           </div>
-          <p className="text-3xl font-black text-amber-400">{totalReserved}</p>
-          <p className="text-[11px] text-amber-500/80 font-medium">Locked for incoming cases</p>
+          <p className="text-3xl font-bold text-amber-800">{totalReserved}</p>
+          <p className="text-[11px] text-amber-800 font-medium">Locked for incoming cases</p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-2">
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>Overall Utilization</span>
-            <AlertTriangle className="w-4 h-4 text-sky-400" />
+            <AlertTriangle className="w-4 h-4 text-blue-700" />
           </div>
-          <p className="text-3xl font-black text-slate-100">{utilizationRate}%</p>
-          <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
+          <p className="text-3xl font-bold text-slate-900">{utilizationRate}%</p>
+          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200">
             <div
               className={`h-full transition-all duration-500 ${
                 utilizationRate > 85 ? 'bg-rose-500' : utilizationRate > 60 ? 'bg-amber-500' : 'bg-emerald-500'
@@ -314,8 +314,8 @@ export const HospitalDashboard: React.FC = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-black text-slate-100 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-emerald-400" /> Live Resource Inventory
+            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-teal-700" /> Live Resource Inventory
             </h2>
             <p className="text-xs text-slate-400">
               Real-time resource counts updated automatically during emergency allocations.
@@ -324,7 +324,7 @@ export const HospitalDashboard: React.FC = () => {
         </div>
 
         {resources.length === 0 ? (
-          <div className="p-12 text-center rounded-2xl bg-slate-900/50 border border-slate-800 text-slate-500 text-sm">
+          <div className="p-12 text-center rounded-2xl bg-white border border-slate-200 text-slate-600 text-sm">
             No resources currently registered for this hospital.
           </div>
         ) : (

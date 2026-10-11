@@ -289,7 +289,7 @@ export const ScenarioControls: React.FC<ScenarioControlsProps> = ({
         type="button"
         onClick={onRunSimulation}
         disabled={isRunning}
-        className="w-full py-3 px-4 rounded-xl font-extrabold text-xs text-white bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 shadow-lg shadow-rose-600/20 transition-all duration-200 transform active:scale-98 flex items-center justify-center gap-2 disabled:opacity-50"
+        className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors transform active:scale-98 flex items-center justify-center gap-2 disabled:opacity-50"
       >
         <Play className={`w-4 h-4 fill-current ${isRunning ? 'animate-spin' : ''}`} />
         <span>{isRunning ? 'CALCULATING ENGINE...' : 'RUN ALLOCATION SIMULATION'}</span>

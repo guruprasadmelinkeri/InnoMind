@@ -55,8 +55,8 @@ export const EmergencyTimeline: React.FC<EmergencyTimelineProps> = ({ status, ha
   ];
 
   return (
-    <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-rose-400 mb-4 flex items-center gap-2">
+    <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-4 flex items-center gap-2">
         <span>●</span> Live Handoff Progress Timeline
       </h3>
 
@@ -68,17 +68,17 @@ export const EmergencyTimeline: React.FC<EmergencyTimelineProps> = ({ status, ha
               key={step.id}
               className={`p-3 rounded-2xl border text-xs flex flex-col items-center text-center transition-all ${
                 step.isDone
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                   : step.isCurrent
-                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-200 animate-pulse'
-                  : 'bg-slate-950/50 border-slate-800 text-slate-500'
+                  ? 'bg-teal-50 border-teal-300 text-teal-950 ring-1 ring-teal-100'
+                  : 'bg-slate-50 border-slate-200 text-slate-500'
               }`}
             >
               <div className="mb-2">
                 {step.isDone ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  <CheckCircle2 className="w-5 h-5 text-emerald-700" />
                 ) : step.isCurrent ? (
-                  <Icon className="w-5 h-5 text-rose-400" />
+                  <Icon className="w-5 h-5 text-teal-700" />
                 ) : (
                   <Circle className="w-5 h-5 text-slate-600" />
                 )}

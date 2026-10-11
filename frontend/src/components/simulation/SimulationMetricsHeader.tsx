@@ -51,7 +51,7 @@ export const SimulationMetricsHeader: React.FC<SimulationMetricsHeaderProps> = (
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Left Title & Status */}
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-gradient-to-br from-rose-500/20 to-amber-500/20 border border-rose-500/30 rounded-2xl shrink-0">
+          <div className="p-3 bg-gradient-to-br from-teal-50 to-blue-50 border border-teal-100 rounded-2xl shrink-0">
             <Activity className="w-6 h-6 text-rose-400 animate-pulse" />
           </div>
           <div>

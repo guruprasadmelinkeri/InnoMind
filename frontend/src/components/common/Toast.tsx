@@ -44,18 +44,18 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             key={toast.id}
             className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-2xl backdrop-blur-md transition-all duration-300 transform translate-y-0 ${
               toast.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-200'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
                 : toast.type === 'error'
-                ? 'bg-rose-950/90 border-rose-500/30 text-rose-200'
+                ? 'bg-rose-50 border-rose-200 text-rose-950'
                 : toast.type === 'warning'
-                ? 'bg-amber-950/90 border-amber-500/30 text-amber-200'
-                : 'bg-slate-900/90 border-slate-700 text-slate-200'
+                ? 'bg-amber-50 border-amber-200 text-amber-950'
+                : 'bg-white border-slate-200 text-slate-900'
             }`}
           >
-            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />}
-            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />}
-            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />}
-            {toast.type === 'info' && <Info className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />}
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />}
+            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-700 shrink-0 mt-0.5" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />}
 
             <div className="flex-1 min-w-0">
               <h4 className="text-sm font-semibold">{toast.title}</h4>
@@ -64,7 +64,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-slate-400 hover:text-slate-200 p-1 rounded-lg transition-colors"
+              className="text-slate-500 hover:text-slate-900 p-1 rounded-lg transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

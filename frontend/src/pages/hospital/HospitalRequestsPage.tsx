@@ -249,19 +249,19 @@ export const HospitalRequestsPage: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black text-slate-100 flex items-center gap-3">
-              <Inbox className="w-7 h-7 text-emerald-400" /> Allocation Requests & Handoffs
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+              <Inbox className="w-7 h-7 text-teal-700" /> Allocation Requests & Handoffs
             </h1>
             {pendingCount > 0 && (
-              <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-500 text-white animate-pulse">
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
                 {pendingCount} PENDING
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-sm text-slate-600 mt-1">
             Emergency case dispatch requests submitted to <strong className="text-slate-200">{hospital.name}</strong>.
           </p>
         </div>
@@ -270,16 +270,16 @@ export const HospitalRequestsPage: React.FC = () => {
           <button
             onClick={() => fetchRequests(true)}
             disabled={refreshing}
-            className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 flex items-center gap-2 transition-all disabled:opacity-50"
+            className="p-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold border border-slate-200 flex items-center gap-2 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-teal-700' : ''}`} />
             Refresh
           </button>
           <Link
             to={account?.role === 'ADMIN' ? '/dispatcher/hospitals' : `/hospital/${hospital.id}`}
-            className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 flex items-center gap-2 transition-all"
+            className="px-4 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold border border-slate-200 flex items-center gap-2 transition-colors"
           >
-            <Building2 className="w-4 h-4 text-emerald-400" /> View Capacity Dashboard
+            <Building2 className="w-4 h-4 text-teal-700" /> View Capacity Dashboard
           </Link>
         </div>
       </div>
@@ -287,7 +287,7 @@ export const HospitalRequestsPage: React.FC = () => {
       {/* Active Ambulance Arrival / Handoff Alerts Section */}
       {activeHandoffs.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-amber-400">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-amber-800">
             Incoming Ambulance Handoff Alerts ({activeHandoffs.length})
           </h2>
           {activeHandoffs.map((item) => (
@@ -303,15 +303,15 @@ export const HospitalRequestsPage: React.FC = () => {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
         {['ALL', 'PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED'].map((st) => (
           <button
             key={st}
             onClick={() => setFilterStatus(st)}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               filterStatus === st
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             {st} {st === 'PENDING' && pendingCount > 0 ? `(${pendingCount})` : ''}
@@ -321,9 +321,9 @@ export const HospitalRequestsPage: React.FC = () => {
 
       {/* Requests List */}
       {filteredItems.length === 0 ? (
-        <div className="p-16 text-center rounded-3xl bg-slate-900/40 border border-slate-800 space-y-3">
-          <Inbox className="w-12 h-12 text-slate-600 mx-auto" />
-          <h3 className="text-base font-bold text-slate-300">No Allocation Requests Found</h3>
+        <div className="p-16 text-center rounded-2xl bg-white border border-slate-200 space-y-3">
+          <Inbox className="w-12 h-12 text-slate-400 mx-auto" />
+          <h3 className="text-base font-bold text-slate-800">No Allocation Requests Found</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
             {filterStatus === 'ALL'
               ? 'There are currently no emergency allocation requests targeting this hospital.'
@@ -340,16 +340,16 @@ export const HospitalRequestsPage: React.FC = () => {
                 key={request.id}
                 className={`p-6 rounded-2xl border transition-all space-y-5 ${
                   request.status === 'PENDING'
-                    ? 'bg-slate-900/90 border-emerald-500/40 shadow-xl shadow-emerald-500/5'
+                    ? 'bg-white border-amber-300 shadow-sm shadow-amber-900/5'
                     : request.status === 'ACCEPTED'
-                    ? 'bg-emerald-950/20 border-emerald-800/40'
-                    : 'bg-slate-900/50 border-slate-800/80 opacity-80'
+                    ? 'bg-emerald-50/50 border-emerald-200'
+                    : 'bg-slate-50 border-slate-200 opacity-90'
                 }`}
               >
                 {/* Request Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-xs font-mono font-black text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                    <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                       REQ #{request.id}
                     </span>
                     <SeverityBadge severity={emergency.severity} />
@@ -357,10 +357,10 @@ export const HospitalRequestsPage: React.FC = () => {
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
                         request.status === 'PENDING'
-                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
                           : request.status === 'ACCEPTED'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : 'bg-rose-50 text-rose-800 border border-rose-200'
                       }`}
                     >
                       {request.status}
@@ -373,7 +373,7 @@ export const HospitalRequestsPage: React.FC = () => {
                       {new Date(request.requested_at).toLocaleTimeString()}
                     </span>
                     {request.expires_at && request.status === 'PENDING' && (
-                      <span className="flex items-center gap-1 text-amber-400 font-semibold">
+                      <span className="flex items-center gap-1 text-amber-800 font-semibold">
                         Expires: {new Date(request.expires_at).toLocaleTimeString()}
                       </span>
                     )}
@@ -384,44 +384,44 @@ export const HospitalRequestsPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <span className="text-[10px] uppercase font-bold text-slate-500">Case Identifier</span>
-                    <p className="text-sm font-black text-slate-100 flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-emerald-400" /> {emergency.case_number}
+                    <p className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-teal-700" /> {emergency.case_number}
                     </p>
                   </div>
 
                   <div className="space-y-1">
                     <span className="text-[10px] uppercase font-bold text-slate-500">Patient Demographic</span>
                     <p className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                      <User className="w-4 h-4 text-sky-400" /> Age: {emergency.patient_age} yrs
+                      <User className="w-4 h-4 text-blue-700" /> Age: {emergency.patient_age} yrs
                     </p>
                   </div>
 
                   <div className="space-y-1">
                     <span className="text-[10px] uppercase font-bold text-slate-500">Matching Recommendation Score</span>
-                    <p className="text-sm font-black text-emerald-400">
+                    <p className="text-sm font-bold text-teal-800">
                       {Math.round(request.match_score * 100)}% Match Score
                     </p>
                   </div>
                 </div>
 
                 {emergency.description && (
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300">
-                    <strong className="text-slate-400">Clinical Summary: </strong>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-700">
+                    <strong className="text-slate-800">Clinical Summary: </strong>
                     {emergency.description}
                   </div>
                 )}
 
                 {/* Required Resources Badge List */}
                 <div className="space-y-2">
-                  <span className="text-[11px] uppercase font-bold text-slate-400">Required Resources to Reserve</span>
+                  <span className="text-[11px] uppercase font-bold text-slate-600">Required Resources to Reserve</span>
                   <div className="flex flex-wrap gap-2">
                     {emergency.requirements.map((req) => (
                       <span
                         key={req.id}
-                        className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-2"
+                        className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-2"
                       >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-                        {req.resource_type}: <strong className="text-emerald-400">{req.quantity}</strong>
+                        <span className="w-2 h-2 rounded-full bg-teal-600 inline-block" />
+                        {req.resource_type}: <strong className="text-teal-800">{req.quantity}</strong>
                       </span>
                     ))}
                   </div>
@@ -429,8 +429,8 @@ export const HospitalRequestsPage: React.FC = () => {
 
                 {/* Rejection Reason if present */}
                 {request.rejection_reason && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-700 mt-0.5" />
                     <div>
                       <strong>Rejection Reason: </strong>
                       {request.rejection_reason}
@@ -446,7 +446,7 @@ export const HospitalRequestsPage: React.FC = () => {
 
                 {/* Action Footer for PENDING requests */}
                 {request.status === 'PENDING' && (
-                  <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="text-xs text-slate-400">
                       Accepting will atomically lock and reserve all required resources.
                     </div>
@@ -455,7 +455,7 @@ export const HospitalRequestsPage: React.FC = () => {
                       <button
                         onClick={() => setRejectingRequest(request)}
                         disabled={isAcceptingThis}
-                        className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-all flex items-center justify-center gap-2"
+                        className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors flex items-center justify-center gap-2"
                       >
                         <XCircle className="w-4 h-4" /> Reject Request
                       </button>
@@ -463,7 +463,7 @@ export const HospitalRequestsPage: React.FC = () => {
                       <button
                         onClick={() => handleAccept(request)}
                         disabled={isAcceptingThis}
-                        className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/40 shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 border border-teal-700 shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {isAcceptingThis ? (
                           <>
@@ -484,7 +484,7 @@ export const HospitalRequestsPage: React.FC = () => {
                 {account?.role === 'ADMIN' && <div className="flex items-center justify-end text-[11px] text-slate-500 pt-1">
                   <Link
                     to={`/dispatcher/emergency/${emergency.id}`}
-                    className="hover:text-emerald-400 transition-colors flex items-center gap-1"
+                    className="hover:text-teal-800 transition-colors flex items-center gap-1"
                   >
                     View Emergency Detail Page <ArrowRight className="w-3 h-3" />
                   </Link>
@@ -512,8 +512,8 @@ export const HospitalRequestsPage: React.FC = () => {
           title={conflictError.title}
         >
           <div className="space-y-4">
-            <div className="flex items-start gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
-              <ShieldAlert className="w-6 h-6 shrink-0 text-rose-400 mt-0.5" />
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-sm">
+              <ShieldAlert className="w-6 h-6 shrink-0 text-rose-700 mt-0.5" />
               <div className="space-y-1">
                 <p className="font-bold text-slate-100">Atomic Reservation Failed</p>
                 <p>{conflictError.message}</p>

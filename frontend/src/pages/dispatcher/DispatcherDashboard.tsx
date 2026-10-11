@@ -358,9 +358,9 @@ export const DispatcherDashboard: React.FC = () => {
 
           <Link
             to="/dispatcher/allocation-simulation"
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition-colors"
           >
-            <GitBranch className="w-4 h-4 text-indigo-600" />
+            <GitBranch className="w-4 h-4 text-teal-700" />
             <span>Batch Allocation & Replanning</span>
           </Link>
 
