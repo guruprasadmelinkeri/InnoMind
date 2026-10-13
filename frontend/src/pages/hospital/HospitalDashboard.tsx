@@ -36,6 +36,7 @@ export const HospitalDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [incomingRequestAlert, setIncomingRequestAlert] = useState<{ caseNumber: string } | null>(null);
 
   // Edit Resource state
   const [editingResource, setEditingResource] = useState<HospitalResource | null>(null);
@@ -75,8 +76,12 @@ export const HospitalDashboard: React.FC = () => {
   }, [fetchData]);
 
   // Real-Time WebSocket Event Subscriptions
-  useWebSocket(['RESOURCE_UPDATED', 'RESERVATION_CREATED'], (payload) => {
-    if (payload.event === 'RESOURCE_UPDATED' && payload.data) {
+  useWebSocket(['RESOURCE_UPDATED', 'RESERVATION_CREATED', 'ALLOCATION_REQUEST_CREATED'], (payload) => {
+    if (payload.event === 'ALLOCATION_REQUEST_CREATED' && payload.data?.hospital_id === id) {
+      const caseNumber = payload.data.case_number || String(payload.data.emergency_id || 'New case');
+      setIncomingRequestAlert({ caseNumber });
+      addToast('warning', 'New incoming emergency request', `Case ${caseNumber} is waiting for your hospital.`);
+    } else if (payload.event === 'RESOURCE_UPDATED' && payload.data) {
       if (payload.data.hospital_id === id) {
         setResources((prev) =>
           prev.map((r) =>
@@ -263,6 +268,22 @@ export const HospitalDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {incomingRequestAlert && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-amber-950 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="rounded-xl bg-amber-100 p-2 text-amber-700"><AlertTriangle className="h-5 w-5" /></span>
+            <div>
+              <p className="font-bold">New emergency request for your hospital</p>
+              <p className="mt-0.5 text-sm text-amber-800">Case {incomingRequestAlert.caseNumber} is waiting for a response.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link to={isAdmin ? `/dispatcher/hospitals/${id}/requests` : `/hospital/${id}/requests`} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800">Review request</Link>
+            <button type="button" onClick={() => setIncomingRequestAlert(null)} aria-label="Dismiss incoming request alert" className="text-sm font-semibold text-amber-800 hover:text-amber-950">Dismiss</button>
+          </div>
+        </div>
+      )}
 
       {/* Overview Statistics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

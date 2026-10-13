@@ -1,9 +1,10 @@
 import React from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+import { formatApiDetail } from '../../services/api';
 
 interface ErrorAlertProps {
   title?: string;
-  message: string;
+  message: unknown;
   onRetry?: () => void;
   isConflict?: boolean;
 }
@@ -14,6 +15,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
   onRetry,
   isConflict = false,
 }) => {
+  const displayMessage = formatApiDetail(message) || 'An unexpected error occurred.';
   return (
     <div
       className={`p-5 rounded-2xl border flex items-start gap-4 shadow-xl backdrop-blur-md ${
@@ -25,7 +27,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
       <AlertCircle className={`w-6 h-6 shrink-0 mt-0.5 ${isConflict ? 'text-amber-700' : 'text-rose-700'}`} />
       <div className="flex-1 min-w-0">
         <h4 className="font-semibold text-base">{title}</h4>
-        <p className="text-sm text-current/90 mt-1 leading-relaxed">{message}</p>
+        <p className="text-sm text-current/90 mt-1 leading-relaxed whitespace-pre-line">{displayMessage}</p>
         {onRetry && (
           <button
             onClick={onRetry}

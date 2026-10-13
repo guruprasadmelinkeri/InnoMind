@@ -1,83 +1,157 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+:root {
+  color-scheme: light;
+  --neo-paper: #fffdf5;
+  --neo-ink: #000;
+  --neo-red: #ff6b6b;
+  --neo-yellow: #ffd93d;
+  --neo-violet: #c4b5fd;
+  --neo-white: #fff;
+  --neo-shadow-sm: 4px 4px 0 #000;
+  --neo-shadow: 8px 8px 0 #000;
+  --neo-shadow-lg: 12px 12px 0 #000;
+}
+
 @layer base {
+  * { box-sizing: border-box; }
+  html { min-width: 320px; background: var(--neo-paper); }
   body {
-    @apply bg-[#F6F8FA] text-slate-800 antialiased min-h-screen selection:bg-teal-600 selection:text-white;
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    min-height: 100vh;
+    color: var(--neo-ink);
+    background-color: var(--neo-paper);
+    background-image: radial-gradient(#000 1px, transparent 1.2px);
+    background-size: 24px 24px;
+    font-family: "Space Grotesk", "Arial Black", sans-serif;
+    font-weight: 700;
+    @apply antialiased selection:bg-[#FFD93D] selection:text-black;
   }
+  h1, h2, h3, h4, h5, h6 { color: var(--neo-ink); font-weight: 900; letter-spacing: -.045em; }
+  button, input, select, textarea { font: inherit; }
+  button, a, select { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 3px solid var(--neo-ink); outline-offset: 3px; }
 }
 
-/* Custom Healthcare Leaflet Popup Styles */
-.leaflet-popup-content-wrapper {
-  background: #ffffff !important;
-  color: #1e293b !important;
-  border-radius: 14px !important;
-  padding: 0 !important;
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.1) !important;
-  border: 1px solid #e2e8f0 !important;
+/* Neo-brutalist surface language shared by all signed-in workspaces. */
+.dashboard-admin, .dashboard-user, .dashboard-hospital {
+  min-height: 100vh;
+  color: var(--neo-ink) !important;
+  background-color: var(--neo-paper) !important;
+  background-image: linear-gradient(to right, rgb(0 0 0 / 5%) 1px, transparent 1px), linear-gradient(to bottom, rgb(0 0 0 / 5%) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
 }
+.dashboard-admin aside, .dashboard-user aside, .dashboard-hospital aside,
+.dashboard-admin > header, .dashboard-user > header, .dashboard-hospital > header,
+.dashboard-admin > nav, .dashboard-user > nav, .dashboard-hospital > nav {
+  color: var(--neo-ink) !important;
+  background: var(--neo-white) !important;
+  border: 3px solid var(--neo-ink) !important;
+  box-shadow: var(--neo-shadow-sm) !important;
+  backdrop-filter: none !important;
+}
+.dashboard-admin aside, .dashboard-user aside, .dashboard-hospital aside { border-left: 0 !important; border-top: 0 !important; border-bottom: 0 !important; }
+.dashboard-admin > header, .dashboard-user > header, .dashboard-hospital > header { border-left: 0 !important; border-right: 0 !important; border-top: 0 !important; }
+.dashboard-admin main, .dashboard-user main, .dashboard-hospital main { isolation: isolate; }
 
-.leaflet-popup-content {
-  margin: 12px 14px !important;
-  line-height: 1.4 !important;
+/* Cards and content panels: paper white, sharp ink border, printed shadow. */
+.dashboard-admin main [class*="bg-white"], .dashboard-user main [class*="bg-white"], .dashboard-hospital main [class*="bg-white"],
+.dashboard-admin main [class*="bg-slate-50"], .dashboard-user main [class*="bg-slate-50"], .dashboard-hospital main [class*="bg-slate-50"] {
+  border-color: var(--neo-ink) !important;
+  border-radius: 0 !important;
+  box-shadow: var(--neo-shadow-sm);
 }
+.dashboard-admin main [class*="rounded-"], .dashboard-user main [class*="rounded-"], .dashboard-hospital main [class*="rounded-"],
+body > #root form [class*="rounded-"] { border-radius: 0 !important; }
+.dashboard-admin main [class*="rounded-full"], .dashboard-user main [class*="rounded-full"], .dashboard-hospital main [class*="rounded-full"],
+body > #root form [class*="rounded-full"] { border-radius: 9999px !important; }
 
-.leaflet-popup-tip {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-}
+/* Strong heading hierarchy and high contrast utility text. */
+.dashboard-admin [class*="text-slate-"], .dashboard-user [class*="text-slate-"], .dashboard-hospital [class*="text-slate-"] { color: #000 !important; }
+.dashboard-admin [class*="text-gray-"], .dashboard-user [class*="text-gray-"], .dashboard-hospital [class*="text-gray-"] { color: #000 !important; }
+.dashboard-admin main h1, .dashboard-user main h1, .dashboard-hospital main h1 { font-weight: 900; letter-spacing: -.055em; }
+.dashboard-admin main h2, .dashboard-user main h2, .dashboard-hospital main h2,
+.dashboard-admin main h3, .dashboard-user main h3, .dashboard-hospital main h3 { font-weight: 900; }
 
-.leaflet-container {
-  font-family: inherit !important;
+/* Mechanical controls preserve existing handlers and disabled states. */
+.dashboard-admin main button:not(:disabled), .dashboard-user main button:not(:disabled), .dashboard-hospital main button:not(:disabled),
+body > #root form button:not(:disabled) {
+  min-height: 44px;
+  border: 3px solid var(--neo-ink) !important;
+  border-radius: 0 !important;
+  box-shadow: var(--neo-shadow-sm);
+  font-weight: 900;
+  transition: transform 100ms linear, box-shadow 100ms linear, filter 100ms linear;
 }
+.dashboard-admin main button:not(:disabled):hover, .dashboard-user main button:not(:disabled):hover, .dashboard-hospital main button:not(:disabled):hover,
+body > #root form button:not(:disabled):hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000; filter: saturate(1.15); }
+.dashboard-admin main button:not(:disabled):active, .dashboard-user main button:not(:disabled):active, .dashboard-hospital main button:not(:disabled):active,
+body > #root form button:not(:disabled):active { transform: translate(4px, 4px); box-shadow: none; }
 
-/* Legacy workflow components retain their utility classes while all role areas
-   share a fresh light clinical canvas. */
-.dashboard-admin .bg-slate-950,
-.dashboard-admin .bg-slate-900,
-.dashboard-admin .bg-slate-900\/80,
-.dashboard-admin .bg-slate-900\/90,
-.dashboard-admin .bg-slate-950\/80,
-.dashboard-user .bg-slate-950,
-.dashboard-user .bg-slate-900,
-.dashboard-user .bg-slate-900\/80,
-.dashboard-user .bg-slate-900\/90,
-.dashboard-user .bg-slate-950\/80,
-.dashboard-hospital .bg-slate-950,
-.dashboard-hospital .bg-slate-900,
-.dashboard-hospital .bg-slate-900\/80,
-.dashboard-hospital .bg-slate-900\/90,
-.dashboard-hospital .bg-slate-950\/80 {
-  background-color: #fff !important;
-}
-.dashboard-admin .bg-slate-800,
-.dashboard-user .bg-slate-800,
-.dashboard-hospital .bg-slate-800 { background-color: #f1f5f9 !important; }
-.dashboard-admin .border-slate-800,
-.dashboard-admin .border-slate-700,
-.dashboard-admin .border-slate-900,
-.dashboard-user .border-slate-800,
-.dashboard-user .border-slate-700,
-.dashboard-user .border-slate-900,
-.dashboard-hospital .border-slate-800,
-.dashboard-hospital .border-slate-700,
-.dashboard-hospital .border-slate-900 { border-color: #e2e8f0 !important; }
-.dashboard-admin .text-slate-100,
-.dashboard-user .text-slate-100,
-.dashboard-hospital .text-slate-100 { color: #0f172a !important; }
-.dashboard-admin .text-slate-200,
-.dashboard-user .text-slate-200,
-.dashboard-hospital .text-slate-200 { color: #1e293b !important; }
-.dashboard-admin .text-slate-300,
-.dashboard-user .text-slate-300,
-.dashboard-hospital .text-slate-300 { color: #334155 !important; }
-.dashboard-admin .text-slate-400,
-.dashboard-user .text-slate-400,
-.dashboard-hospital .text-slate-400 { color: #64748b !important; }
-.dashboard-admin .text-slate-500,
-.dashboard-user .text-slate-500,
-.dashboard-hospital .text-slate-500 { color: #64748b !important; }
 .dashboard-admin input, .dashboard-admin select, .dashboard-admin textarea,
 .dashboard-user input, .dashboard-user select, .dashboard-user textarea,
-.dashboard-hospital input, .dashboard-hospital select, .dashboard-hospital textarea { color: #0f172a; }
+.dashboard-hospital input, .dashboard-hospital select, .dashboard-hospital textarea,
+body > #root form input, body > #root form select, body > #root form textarea {
+  border: 3px solid var(--neo-ink) !important;
+  border-radius: 0 !important;
+  color: #000 !important;
+  background-color: #fff !important;
+  font-weight: 700;
+}
+.dashboard-admin input:focus, .dashboard-admin select:focus, .dashboard-admin textarea:focus,
+.dashboard-user input:focus, .dashboard-user select:focus, .dashboard-user textarea:focus,
+.dashboard-hospital input:focus, .dashboard-hospital select:focus, .dashboard-hospital textarea:focus,
+body > #root form input:focus, body > #root form select:focus, body > #root form textarea:focus {
+  outline: none;
+  background-color: var(--neo-yellow) !important;
+  box-shadow: var(--neo-shadow-sm);
+}
+input::placeholder, textarea::placeholder { color: #000 !important; opacity: .55; }
+
+/* Auth screens join the same paper-and-ink system. */
+body > #root form { color: #000; }
+body > #root form [class*="border-"] { border-color: #000; }
+body > #root form button { background-color: var(--neo-red); color: #000; }
+body > #root form button:disabled { border: 3px solid #000; border-radius: 0; }
+body > #root > div[class*="min-h-screen"] { background-color: var(--neo-paper) !important; color: #000 !important; }
+body > #root section[class*="bg-\[#15243a\]"], body > #root section[class*="bg-\[#0f766e\]"] {
+  color: #fff !important; background: #000 !important; border-right: 4px solid #000;
+}
+body > #root section[class*="bg-\[#15243a\]"] h1, body > #root section[class*="bg-\[#0f766e\]"] h1 { color: #ffd93d !important; font-weight: 900; }
+
+/* Shared navigation and component styling. */
+.dashboard-admin nav a, .dashboard-user nav a, .dashboard-hospital nav a { border-radius: 0 !important; font-weight: 900; }
+.dashboard-admin aside nav a[class*="bg-"], .dashboard-user aside nav a[class*="bg-"], .dashboard-hospital aside nav a[class*="bg-"] {
+  border: 2px solid #000; box-shadow: 3px 3px 0 #000;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--neo-paper) !important; color: #000 !important; border-radius: 0 !important;
+  box-shadow: var(--neo-shadow-sm) !important; border: 3px solid #000 !important;
+}
+.leaflet-popup-tip { background: var(--neo-paper) !important; }
+.leaflet-container { font-family: "Space Grotesk", sans-serif !important; }
+
+.recording-wave-bar {
+  display: block;
+  width: 3px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: recording-wave 650ms ease-in-out infinite alternate;
+}
+.recording-wave-bar:nth-child(2) { animation-delay: 100ms; }
+.recording-wave-bar:nth-child(3) { animation-delay: 200ms; }
+.recording-wave-bar:nth-child(4) { animation-delay: 300ms; }
+.recording-wave-bar:nth-child(5) { animation-delay: 400ms; }
+@keyframes recording-wave {
+  from { height: 5px; opacity: .55; }
+  to { height: 18px; opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-admin main [class*="bg-white"], .dashboard-user main [class*="bg-white"], .dashboard-hospital main [class*="bg-white"],
+  .dashboard-admin main [class*="bg-slate-50"], .dashboard-user main [class*="bg-slate-50"], .dashboard-hospital main [class*="bg-slate-50"] { box-shadow: 4px 4px 0 #000; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

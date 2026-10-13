@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     AUTO_ARRIVAL_DELAY_SECONDS: int = 30
     AUTH_SECRET_KEY: str = ""
     AUTH_TOKEN_TTL_MINUTES: int = 720
+    SMTP_HOST: Union[str, None] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Union[str, None] = None
+    SMTP_PASSWORD: Union[str, None] = None
+    SMTP_FROM_EMAIL: Union[str, None] = None
+    SMTP_USE_TLS: bool = True
+    TWILIO_ACCOUNT_SID: Union[str, None] = None
+    TWILIO_AUTH_TOKEN: Union[str, None] = None
+    TWILIO_FROM_NUMBER: Union[str, None] = None
 
 
     @property

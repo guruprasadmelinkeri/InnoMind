@@ -23,7 +23,7 @@ export interface ApiErrorResponse {
   isConflict?: boolean;
 }
 
-const formatApiDetail = (detail: unknown): string | undefined => {
+export const formatApiDetail = (detail: unknown): string | undefined => {
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
     const messages = detail.map((issue) => {

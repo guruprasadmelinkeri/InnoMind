@@ -1,17 +1,18 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, Info, X } from 'lucide-react';
+import { formatApiDetail } from '../../services/api';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 export interface ToastMessage {
   id: string;
   type: ToastType;
-  title: string;
-  message?: string;
+  title: unknown;
+  message?: unknown;
 }
 
 interface ToastContextType {
-  addToast: (type: ToastType, title: string, message?: string) => void;
+  addToast: (type: ToastType, title: unknown, message?: unknown) => void;
   removeToast: (id: string) => void;
 }
 
@@ -24,7 +25,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addToast = useCallback((type: ToastType, title: string, message?: string) => {
+  const addToast = useCallback((type: ToastType, title: unknown, message?: unknown) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, type, title, message }]);
 
@@ -58,8 +59,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             {toast.type === 'info' && <Info className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />}
 
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-semibold">{toast.title}</h4>
-              {toast.message && <p className="text-xs opacity-90 mt-0.5 leading-relaxed">{toast.message}</p>}
+              <h4 className="text-sm font-semibold">{formatApiDetail(toast.title) || 'Notification'}</h4>
+              {toast.message != null && <p className="text-xs opacity-90 mt-0.5 leading-relaxed whitespace-pre-line">{formatApiDetail(toast.message) || 'An unexpected error occurred.'}</p>}
             </div>
 
             <button

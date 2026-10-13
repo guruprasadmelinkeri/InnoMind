@@ -84,6 +84,7 @@ interface PuneMapProps {
   recommendations?: HospitalRecommendation[];
   height?: string;
   showRouteInfo?: boolean;
+  showControls?: boolean;
 }
 
 export const PuneMap: React.FC<PuneMapProps> = ({
@@ -98,6 +99,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
   recommendations = [],
   height = '520px',
   showRouteInfo = true,
+  showControls = true,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -153,6 +155,13 @@ export const PuneMap: React.FC<PuneMapProps> = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const timer = window.setTimeout(() => map.invalidateSize({ pan: false }), 100);
+    return () => window.clearTimeout(timer);
+  }, [height, showControls]);
 
   // Update Route when selected hospital or emergency changes
   const updateRoute = useCallback(async () => {
@@ -501,6 +510,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
       {/* Top Map Control Bar */}
+      {showControls && <>
       <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full bg-teal-600"></div>
@@ -558,6 +568,7 @@ export const PuneMap: React.FC<PuneMapProps> = ({
           );
         })}
       </div>
+      </>}
 
       {/* Main Map Container */}
       <div className="relative w-full" style={{ height }}>

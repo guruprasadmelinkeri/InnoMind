@@ -261,6 +261,10 @@ def accept_allocation_request(db: Session, request_id: int) -> Dict[str, Any]:
     hospital = db.query(Hospital).filter(Hospital.id == request.hospital_id).first()
     hospital_name = hospital.name if hospital else f"Hospital #{request.hospital_id}"
 
+    if hospital:
+        from app.services.emergency_notifications import notify_emergency_contacts
+        notify_emergency_contacts(db, emergency, hospital)
+
     # Broadcast events ONLY AFTER successful DB commit
     broadcast_event_sync(
         WebSocketEvents.ALLOCATION_REQUEST_ACCEPTED,

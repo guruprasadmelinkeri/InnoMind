@@ -53,10 +53,10 @@ alembic upgrade head
 python scripts/seed.py
 
 # Start FastAPI server
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-- Backend API root: `http://localhost:8000`
-- Interactive API Docs (Swagger): `http://localhost:8000/docs`
+- Backend API root: `http://localhost:8000` on this computer, or `http://<computer-lan-ip>:8000` from another device on the same Wi-Fi.
+- Interactive API Docs (Swagger): `http://localhost:8000/docs` on this computer, or `http://<computer-lan-ip>:8000/docs` from another device on the same Wi-Fi.
 - Health check endpoint: `http://localhost:8000/health`
 
 ### Step 4: Frontend Setup & Dev Server

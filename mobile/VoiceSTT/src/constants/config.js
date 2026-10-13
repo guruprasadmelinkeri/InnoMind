@@ -1,5 +1,6 @@
 // ─── App Configuration ────────────────────────────────────────────────────────
-export const BACKEND_URL = 'http://192.168.10.43.94:8000/voice';
+import { MEDIROUTE_BACKEND_URL } from '../config/medirouteConfig';
+export const BACKEND_URL = `${MEDIROUTE_BACKEND_URL}/voice`;
 
 // For the prototype, the username is hardcoded here.
 // Replace with a real auth mechanism later.

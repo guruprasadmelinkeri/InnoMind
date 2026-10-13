@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import L from 'leaflet';
 import {
   Activity,
@@ -7,15 +7,19 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock3,
+  Keyboard,
   Loader2,
+  MessageCircle,
   Mic,
   MapPin,
   Plus,
+  Phone,
   ShieldAlert,
   Square,
   Sparkles,
   Trash2,
   Truck,
+  Video,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
 import { PUNE_PRESETS, PuneMap, type EmergencyPoint } from '../../components/map/PuneMap';
@@ -34,6 +38,7 @@ import type { Hospital, ResourceType } from '../../types/hospital';
 import { analyzeEmergencyDescription } from '../../services/aiApi';
 import type { EmergencyAnalyzeResponse } from '../../services/aiApi';
 import { transcribeEmergencyAudio } from '../../services/aiApi';
+import { addEmergencyContact, deleteEmergencyContact, getEmergencyContacts, type EmergencyContact } from '../../services/emergencyContactsApi';
 
 const RESOURCE_TYPES: { type: ResourceType; label: string }[] = [
   { type: 'ICU_BED', label: 'ICU Bed' },
@@ -43,9 +48,6 @@ const RESOURCE_TYPES: { type: ResourceType; label: string }[] = [
   { type: 'TRAUMA_BED', label: 'Trauma Bed' },
   { type: 'OPERATING_ROOM', label: 'Operating Room' },
 ];
-
-const DEMO_EMERGENCY_TEXT =
-  '62 year old male involved in a highway accident near FC Road, Deccan Gymkhana, Pune. Severe bleeding, difficulty breathing and suspected chest trauma.';
 
 const USER_STATUS_COPY: Record<string, string> = {
   CREATED: 'Request received and queued for triage.',
@@ -91,7 +93,9 @@ export const UserDashboard: React.FC = () => {
   const { addToast } = useToast();
   const navigate = useNavigate();
   const { id: routeEmergencyId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const detailMode = Boolean(routeEmergencyId);
+  const caseDetailsMode = searchParams.get('view') === 'details';
 
   const [aiInput, setAiInput] = useState<string>('');
   const [aiAnalyzing, setAiAnalyzing] = useState<boolean>(false);
@@ -99,6 +103,8 @@ export const UserDashboard: React.FC = () => {
   const [aiError, setAiError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [intakeMode, setIntakeMode] = useState<'voice' | 'type' | null>(null);
+  const [intakeRole, setIntakeRole] = useState<'public' | 'professional' | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
 
@@ -123,6 +129,70 @@ export const UserDashboard: React.FC = () => {
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationMessage, setLocationMessage] = useState('Pickup location not shared yet');
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [showContactPanel, setShowContactPanel] = useState(false);
+  const [showMoneyRequest, setShowMoneyRequest] = useState(false);
+  const [showInsuranceForm, setShowInsuranceForm] = useState(false);
+  const [requestAmount, setRequestAmount] = useState('');
+  const [requestNote, setRequestNote] = useState('');
+  const [moneyRequestText, setMoneyRequestText] = useState('');
+  const [insurancePolicyNumber, setInsurancePolicyNumber] = useState('');
+  const [savedInsurancePolicyNumber, setSavedInsurancePolicyNumber] = useState('');
+  const [expandedSupportPanel, setExpandedSupportPanel] = useState<'map' | 'support'>('support');
+  const [representativeMode, setRepresentativeMode] = useState<'call' | 'chat' | 'video' | null>(null);
+  const [videoPanelWidth, setVideoPanelWidth] = useState(50);
+  const [contactLabel, setContactLabel] = useState('');
+  const [contactValue, setContactValue] = useState('');
+  const [contactType, setContactType] = useState<'PHONE' | 'EMAIL'>('PHONE');
+  const [savingContact, setSavingContact] = useState(false);
+
+  const loadEmergencyContacts = useCallback(async () => {
+    try { setEmergencyContacts(await getEmergencyContacts()); }
+    catch (err) { addToast('error', 'Contacts unavailable', parseApiError(err).message); }
+  }, [addToast]);
+
+  useEffect(() => { void loadEmergencyContacts(); }, [loadEmergencyContacts]);
+
+  const handleAddEmergencyContact = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSavingContact(true);
+    try {
+      const contact = await addEmergencyContact({ label: contactLabel.trim(), contact_type: contactType, value: contactValue.trim() });
+      setEmergencyContacts((current) => [...current, contact]);
+      setContactLabel('');
+      setContactValue('');
+      addToast('success', 'Contact saved', 'They will be notified when a hospital accepts your emergency.');
+    } catch (err) { addToast('error', 'Could not save contact', parseApiError(err).message); }
+    finally { setSavingContact(false); }
+  };
+
+  const handlePrepareMoneyRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(requestAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || !activeEmergency) return;
+    const message = `I need help with emergency expenses for case ${activeEmergency.case_number}. Amount requested: ₹${amount.toLocaleString('en-IN')}.${requestNote.trim() ? ` ${requestNote.trim()}` : ''}`;
+    setMoneyRequestText(message);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Emergency assistance request', text: message });
+        addToast('success', 'Request ready', 'Your emergency assistance message was shared.');
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(message);
+        addToast('success', 'Request ready', 'Your emergency assistance message was copied.');
+      } else {
+        addToast('info', 'Request ready to share', 'Copy the prepared message below and send it to your contacts.');
+      }
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'AbortError')) addToast('info', 'Request ready to share', 'Copy the prepared message below and send it to your contacts.');
+    }
+  };
+
+  const handleSaveInsuranceNumber = (event: React.FormEvent) => {
+    event.preventDefault();
+    setSavedInsurancePolicyNumber(insurancePolicyNumber.trim());
+    setShowInsuranceForm(false);
+    addToast('success', 'Policy number added', 'The number is available on this page.');
+  };
 
   const miniMapRef = useRef<HTMLDivElement>(null);
   const miniMapInstance = useRef<L.Map | null>(null);
@@ -172,7 +242,7 @@ export const UserDashboard: React.FC = () => {
           setAiInput(transcript);
           setAiAnalysis(null);
           setAiError(null);
-          addToast('success', 'Audio Transcribed', 'The transcript was added to the Analyze by Gemini text box.');
+          addToast('success', 'Audio Transcribed', 'The transcript was added to the emergency description.');
         } catch (err) {
           const message = parseApiError(err).message;
           setAiError(message);
@@ -359,6 +429,10 @@ export const UserDashboard: React.FC = () => {
     }
   }, [activeEmergency?.id, activeEmergency?.status]);
 
+  useEffect(() => {
+    if (activeEmergency?.assigned_ambulance_id) setExpandedSupportPanel('map');
+  }, [activeEmergency?.assigned_ambulance_id]);
+
   const topRecommendation = useMemo(
     () => recommendations?.recommendations[0] ?? null,
     [recommendations]
@@ -385,6 +459,7 @@ export const UserDashboard: React.FC = () => {
 
   const workflowProgress = activeEmergency ? getWorkflowProgress(activeEmergency.status) : 0;
   const workflowIndex = activeEmergency ? STATUS_SEQUENCE.indexOf(activeEmergency.status as (typeof STATUS_SEQUENCE)[number]) : -1;
+  const hasOngoingEmergency = Boolean(activeEmergency && !['HANDOFF_COMPLETED', 'CANCELLED'].includes(activeEmergency.status));
 
   useEffect(() => {
     let cancelled = false;
@@ -401,10 +476,6 @@ export const UserDashboard: React.FC = () => {
     void loadAssignment();
     return () => { cancelled = true; };
   }, [activeEmergency, hospitals]);
-
-  const handleUseDemoText = () => {
-    setAiInput(DEMO_EMERGENCY_TEXT);
-  };
 
   const handleShareLocation = () => {
     if (!navigator.geolocation) {
@@ -448,6 +519,16 @@ export const UserDashboard: React.FC = () => {
     try {
       const result = await analyzeEmergencyDescription(aiInput.trim());
       setAiAnalysis(result);
+      setSeverity(result.severity);
+      if (result.patient_age !== undefined && result.patient_age !== null) setPatientAge(String(result.patient_age));
+      setDescription(aiInput.trim() || result.summary);
+      if (result.required_resources.length > 0) {
+        setRequirements(result.required_resources.map((resource) => ({
+          resource_type: resource.resource_type,
+          quantity: resource.quantity,
+          required: true,
+        })));
+      }
       addToast('success', 'Gemini Analysis Complete', 'Successfully extracted clinical parameters and requirements.');
     } catch (err) {
       const parsed = parseApiError(err);
@@ -459,28 +540,10 @@ export const UserDashboard: React.FC = () => {
     }
   };
 
-  const handleApplyAnalysis = () => {
-    if (!aiAnalysis) return;
-
-    setSeverity(aiAnalysis.severity);
-    if (aiAnalysis.patient_age !== undefined && aiAnalysis.patient_age !== null) {
-      setPatientAge(String(aiAnalysis.patient_age));
-    }
-    // Preserve the original transcript in the emergency record while Gemini
-    // supplies structured severity, age, and resource values.
-    setDescription(aiInput.trim() || aiAnalysis.summary);
-
-    if (aiAnalysis.required_resources.length > 0) {
-      setRequirements(
-        aiAnalysis.required_resources.map((r) => ({
-          resource_type: r.resource_type,
-          quantity: r.quantity,
-          required: true,
-        }))
-      );
-    }
-
-    addToast('info', 'Analysis Applied', 'Populated incident form with Gemini AI recommendations.');
+  const chooseReporter = (role: 'public' | 'professional') => {
+    setIntakeRole(role);
+    setDescription(aiInput.trim());
+    if (role === 'public') void handleAnalyzeWithGemini();
   };
 
   const handleAddRequirement = () => {
@@ -514,8 +577,8 @@ export const UserDashboard: React.FC = () => {
     );
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = async (event?: React.FormEvent) => {
+    event?.preventDefault();
     setError(null);
     const emergencyDescription = description.trim() || aiInput.trim();
 
@@ -568,8 +631,8 @@ export const UserDashboard: React.FC = () => {
       } as EmergencyCaseCreate);
 
       setActiveEmergency(createdCase);
-      navigate(`/user/emergency/${createdCase.id}`);
       addToast('success', 'Emergency Request Sent', `Case ${createdCase.case_number} has been sent to the operations desk.`);
+      navigate(`/user/emergency/${createdCase.id}`);
     } catch (err) {
       const parsed = parseApiError(err);
       setError(parsed.message);
@@ -583,145 +646,59 @@ export const UserDashboard: React.FC = () => {
     <div className="mx-auto max-w-[1500px] pb-12 space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          {detailMode && <Link to="/user" className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700"><ArrowLeft className="w-4 h-4" /> New emergency request</Link>}
+          {detailMode && <Link to={caseDetailsMode ? `/user/emergency/${routeEmergencyId}` : '/user'} className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700"><ArrowLeft className="w-4 h-4" /> {caseDetailsMode ? 'Back to current progress' : 'New emergency request'}</Link>}
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
             <ShieldAlert className="h-6 w-6 text-emerald-600" /> {detailMode ? 'Emergency response' : 'Get emergency help'}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">{detailMode ? 'Your request, live progress, and hospital handoff in one place.' : 'Tell us what happened. Dispatch will coordinate the next steps.'}</p>
+          <p className="mt-1 text-sm text-slate-500">{detailMode ? caseDetailsMode ? 'Full information for your emergency request.' : 'Your current response stage and nearby hospitals.' : 'Tell us what happened. Dispatch will coordinate the next steps.'}</p>
         </div>
-        {!detailMode && activeEmergency && <Link to={`/user/emergency/${activeEmergency.id}`} className="shrink-0 rounded-xl border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-800 shadow-sm hover:bg-teal-50">Track latest request</Link>}
+        {!detailMode && hasOngoingEmergency && activeEmergency && <Link to={`/user/emergency/${activeEmergency.id}`} className="shrink-0 rounded-xl border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-800 shadow-sm hover:bg-teal-50">Track ongoing request</Link>}
       </div>
 
-      <div className={`grid grid-cols-1 gap-5 ${detailMode ? 'xl:grid-cols-1' : 'mx-auto max-w-3xl'}`}>
+      <div className={`grid grid-cols-1 gap-5 ${detailMode ? 'xl:grid-cols-1' : 'mx-auto w-full max-w-6xl'}`}>
         {!detailMode && (
-        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm space-y-6">
-          <div className="p-5 rounded-2xl bg-white border border-emerald-200 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-900">
-                  Gemini AI Emergency Analyzer
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleUseDemoText}
-                className="self-start sm:self-auto px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer"
-              >
-                ⚡ Use Pune Demo Incident
+        <form onSubmit={handleSubmit} className={intakeRole ? 'space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6' : 'space-y-6'}>
+          {!intakeRole ? <section className="flex min-h-[calc(100dvh-13rem)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-white to-emerald-50 p-5 shadow-[0_18px_55px_-30px_rgba(15,118,110,0.32)] sm:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-left"><p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Start your request</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">How would you like to tell us?</h2><p className="mt-2 text-sm text-slate-500">Choose the easiest way. You can review everything before sending.</p></div>
+              <span className="rounded-full border border-emerald-100 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500">Step 1 of 3</span>
+            </div>
+            {!intakeMode ? <div className="mt-6 grid w-full flex-1 grid-cols-1 grid-rows-2 gap-4 sm:grid-cols-2 sm:grid-rows-1">
+              <button type="button" onClick={() => { setIntakeMode('voice'); void handleRecordAudio(); }} className="group flex h-full min-h-[12rem] w-full flex-col items-center justify-center rounded-2xl border border-emerald-700 bg-emerald-700 px-6 py-8 text-center text-white shadow-lg shadow-emerald-900/10 transition duration-200 hover:-translate-y-1 hover:bg-emerald-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-300">
+                <span className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20 transition group-hover:scale-105"><Mic className="h-10 w-10" strokeWidth={1.8}/></span><span className="text-xl font-bold">Talk about the emergency</span><span className="mt-2 max-w-xs text-sm leading-6 text-emerald-50">Describe what happened aloud, then review the transcript.</span>
               </button>
+              <button type="button" onClick={() => setIntakeMode('type')} className="group flex h-full min-h-[12rem] w-full flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/90 px-6 py-8 text-center text-slate-800 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:bg-white hover:shadow-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200">
+                <span className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 transition group-hover:scale-105"><Keyboard className="h-10 w-10" strokeWidth={1.8}/></span><span className="text-xl font-bold">I will type</span><span className="mt-2 max-w-xs text-sm leading-6 text-slate-500">Write a short description of the situation.</span>
+              </button>
+            </div> : <div className="mx-auto max-w-2xl space-y-4">
+              {intakeMode === 'voice' && <button type="button" onClick={() => void handleRecordAudio()} disabled={isTranscribing} aria-label={isRecording ? 'Stop recording' : 'Record emergency description'} className={`mx-auto rounded-full p-6 text-white ${isRecording ? 'bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{isTranscribing ? <Loader2 className="h-9 w-9 animate-spin"/> : isRecording ? <Square className="h-9 w-9 fill-current"/> : <Mic className="h-9 w-9"/>}</button>}
+              {(isRecording || isTranscribing) && <p role="status" className="flex items-center justify-center gap-2 text-xs text-emerald-800">{isRecording && <span aria-hidden="true" className="flex h-5 items-center gap-0.5"><i className="recording-wave-bar"/><i className="recording-wave-bar"/><i className="recording-wave-bar"/><i className="recording-wave-bar"/><i className="recording-wave-bar"/></span>}{isRecording ? 'Recording… tap the microphone when you are done.' : 'Converting speech to text…'}</p>}
+              <textarea value={aiInput} onChange={(e) => setAiInput(e.target.value)} rows={3} placeholder={intakeMode === 'voice' ? 'Your spoken description will appear here. You can edit it.' : 'Describe what happened and any urgent symptoms…'} className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              <p className="text-xs text-slate-500">Who is reporting this emergency?</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button type="button" disabled={!aiInput.trim() || aiAnalyzing} onClick={() => chooseReporter('public')} className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left font-bold text-sm text-slate-800 hover:bg-emerald-100 disabled:opacity-50">I am not a medical professional</button>
+                <button type="button" disabled={!aiInput.trim()} onClick={() => chooseReporter('professional')} className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-left font-bold text-sm text-slate-800 hover:bg-indigo-100 disabled:opacity-50">I am a medical professional</button>
+              </div>
+            </div>}
+            {aiError && <div className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle className="h-4 w-4 shrink-0"/>{aiError}</div>}
+          </section> : <>
+            <div className={`rounded-xl border p-4 text-sm font-semibold flex items-center gap-3 ${intakeRole === 'public' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-indigo-200 bg-indigo-50 text-indigo-900'}`}>
+              {intakeRole === 'public' ? <Sparkles className="h-5 w-5"/> : <CheckCircle2 className="h-5 w-5"/>}
+              {intakeRole === 'public' ? (aiAnalyzing ? 'Assessing the details…' : aiError ? 'Review the incident details below.' : 'Gemini assessment complete. Review the details below.') : 'Enter clinical details and hospital resources below.'}
+              {aiAnalyzing && <Loader2 className="ml-auto h-4 w-4 animate-spin"/>}
             </div>
+            {aiAnalysis && <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs"><div className="font-bold text-slate-800">Suggested severity: {aiAnalysis.severity}</div><p className="mt-1 text-slate-600">{aiAnalysis.summary}</p></div>}
+            {aiError && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"><AlertTriangle className="h-4 w-4 shrink-0"/>{aiError}</div>}
+          </>}
 
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handleRecordAudio()}
-                  disabled={isTranscribing}
-                  aria-pressed={isRecording}
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-colors disabled:opacity-50 ${isRecording ? 'bg-rose-700 hover:bg-rose-800 text-white' : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'}`}
-                >
-                  {isTranscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : isRecording ? <Square className="w-4 h-4 fill-current" /> : <Mic className="w-4 h-4" />}
-                  {isTranscribing ? 'Transcribing…' : isRecording ? 'Stop recording' : 'Speak to fill this field'}
-                </button>
-                <span className="text-[11px] text-slate-600">Speech is transcribed into this editable text box. Pickup location is entered separately below.</span>
-              </div>
-              {(isRecording || isTranscribing) && (
-                <p role="status" className="text-xs text-teal-800">{isRecording ? 'Recording… stop when you are done speaking.' : 'Converting speech to text…'}</p>
-              )}
-              <textarea
-                value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
-                rows={3}
-                placeholder='Enter unstructured emergency description (e.g., "62 year old male involved in a highway accident near FC Road, Deccan Gymkhana, Pune. Severe bleeding, difficulty breathing and suspected chest trauma.")'
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-              />
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleAnalyzeWithGemini}
-                disabled={aiAnalyzing || !aiInput.trim()}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
-                >
-                  {aiAnalyzing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Gemini is analyzing the incident...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" /> [ Analyze with Gemini ]
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {aiError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                <span>{aiError}</span>
-              </div>
-            )}
-
-            {aiAnalysis && (
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Extracted Parameters
-                  </h3>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
-                    {aiAnalysis.severity}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Patient Age</span>
-                    <p className="font-bold text-slate-800">
-                      {aiAnalysis.patient_age ? `${aiAnalysis.patient_age} Years` : 'Not Specified'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Clinical Summary</span>
-                    <p className="text-slate-700 font-medium">{aiAnalysis.summary}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Extracted Resources</span>
-                  <div className="flex flex-wrap gap-2">
-                    {aiAnalysis.required_resources.map((res, i) => (
-                      <span
-                        key={i}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono font-bold text-xs"
-                      >
-                        ✓ {res.resource_type} (×{res.quantity})
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleApplyAnalysis}
-                    className="px-4 py-2 rounded-lg font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> [ Populate Form with Analysis ]
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
+          {intakeRole && <>
           {error && (
             <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
               ⚠️ {error}
             </div>
           )}
 
-          <details className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <details open={intakeRole === 'professional'} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
             <summary className="cursor-pointer text-xs font-bold text-slate-700">Optional patient and clinical details</summary>
             <div className="mt-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -843,7 +820,7 @@ export const UserDashboard: React.FC = () => {
             </div>}
           </div>
 
-          <details className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <details open={intakeRole === 'professional'} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
             <summary className="cursor-pointer text-xs font-bold text-slate-700">Hospital resources needed (optional)</summary>
             <div className="mt-4 space-y-4">
           <div className="space-y-4">
@@ -939,6 +916,7 @@ export const UserDashboard: React.FC = () => {
               )}
             </button>
           </div>
+          </>}
         </form>
         )}
 
@@ -946,6 +924,7 @@ export const UserDashboard: React.FC = () => {
         <div className="space-y-6">
           {!activeEmergency && loadingRecent && <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin text-teal-600" />Loading your emergency response…</div>}
           {!activeEmergency && !loadingRecent && <div className="rounded-2xl border border-slate-200 bg-white p-6"><p className="text-sm font-semibold text-slate-800">We could not load this emergency request.</p><p className="mt-1 text-xs text-slate-500">It may no longer be available on your account.</p><Link to="/user" className="mt-4 inline-flex text-xs font-bold text-teal-700">Start a new request</Link></div>}
+          {caseDetailsMode ? <>
           {activeEmergency && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-700">Emergency transcript</p><h2 className="mt-1 text-lg font-bold text-slate-900">Case {activeEmergency.case_number}</h2></div><StatusBadge status={activeEmergency.status} /></div><p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">{activeEmergency.description}</p><div className="mt-4 flex flex-wrap gap-2 text-[11px]"><span className="rounded-lg bg-slate-50 px-3 py-1.5 font-semibold text-slate-600">Severity: {activeEmergency.severity}</span>{activeEmergency.patient_age != null && <span className="rounded-lg bg-slate-50 px-3 py-1.5 font-semibold text-slate-600">Age: {activeEmergency.patient_age}</span>}{activeEmergency.requirements?.map((item, index) => <span key={`${item.resource_type}-${index}`} className="rounded-lg bg-teal-50 px-3 py-1.5 font-semibold text-teal-800">{item.resource_type.replaceAll('_', ' ')} ×{item.quantity}</span>)}</div></section>}
           {activeEmergency && (<>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -976,7 +955,6 @@ export const UserDashboard: React.FC = () => {
                 <p className="text-sm leading-6 text-slate-600">
                   {USER_STATUS_COPY[activeEmergency.status] || 'Emergency request is being processed.'}
                 </p>
-
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="rounded-xl bg-slate-50 p-3 border border-slate-200">
                     <div className="uppercase tracking-wide text-slate-400 mb-1">Severity</div>
@@ -1156,6 +1134,108 @@ export const UserDashboard: React.FC = () => {
               </li>
             </ul>
           </div>
+          </> : activeEmergency ? <>
+            <div className="grid gap-5 lg:grid-cols-2 lg:items-stretch">
+            <div className="flex h-[620px] flex-col gap-4">
+            <section className="h-28 shrink-0 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm" aria-live="polite">
+              <div className="flex h-full items-center justify-between gap-3">
+                <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Current progress</p>
+                  <h2 className="mt-1 truncate text-base font-bold text-slate-900">{activeEmergency.assigned_ambulance_id ? (activeEmergency.status === 'EN_ROUTE' ? `Ambulance on the way · ${assignedAmbulance?.vehicle_number || `Unit #${activeEmergency.assigned_ambulance_id}`}` : activeEmergency.status === 'ARRIVED' ? 'Ambulance has arrived' : activeEmergency.status === 'HANDOFF_COMPLETED' ? 'Care handoff complete' : `Ambulance assigned · ${assignedAmbulance?.vehicle_number || `Unit #${activeEmergency.assigned_ambulance_id}`}`) : (USER_STATUS_COPY[activeEmergency.status] || 'Your emergency request is being processed.')}</h2>
+                  {activeEmergency.assigned_ambulance_id && <p className="mt-0.5 truncate text-[11px] text-slate-600">Driver: {(assignedAmbulance as (Ambulance & { driver_name?: string }) | null)?.driver_name || 'Not shared by dispatch yet'}</p>}
+                </div>
+                <StatusBadge status={activeEmergency.status}/>
+              </div>
+            </section>
+
+            <div className="flex min-h-0 flex-1 gap-3">
+              <section style={{ flex: `${videoPanelWidth} 1 0%` }} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+                <div className="p-3">
+                  <h2 className="text-sm font-bold leading-snug text-amber-950">Don’t panic. Follow these steps till help arrives.</h2>
+                  <p className="mt-1 text-xs text-slate-600">First aid video</p>
+                </div>
+                <div className="min-h-0 flex-1 border-t border-amber-100 bg-slate-950">
+                  <iframe className="h-full w-full" src="https://www.youtube.com/embed/TsJ49Np3HS0?si=pty_azIVME2DsRPa" title="First aid video: steps to follow while help arrives" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />
+                </div>
+              </section>
+
+              <section style={{ flex: `${100 - videoPanelWidth} 1 0%` }} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-teal-200 bg-white shadow-sm">
+                <div className="p-3">
+                  <h2 className="text-sm font-bold leading-snug text-slate-900">Contact our representative</h2>
+                  <p className="mt-1 text-xs text-slate-500">Choose how you would like to connect.</p>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 px-3 pb-3">
+                  <button type="button" onClick={() => setRepresentativeMode('call')} className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-semibold ${representativeMode === 'call' ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}><Phone className="h-4 w-4"/>Call</button>
+                  <button type="button" onClick={() => setRepresentativeMode('chat')} className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-semibold ${representativeMode === 'chat' ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}><MessageCircle className="h-4 w-4"/>Chat</button>
+                  <button type="button" onClick={() => setRepresentativeMode('video')} className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-semibold ${representativeMode === 'video' ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}><Video className="h-4 w-4"/>Video</button>
+                </div>
+                <div className="flex min-h-0 flex-1 items-center justify-center border-t border-slate-100 bg-slate-50 p-3 text-center">
+                  {!representativeMode && <p className="text-xs text-slate-500">Select Call, Chat, or Video to open the connection panel.</p>}
+                  {representativeMode === 'call' && <div className="space-y-2"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-teal-100 text-teal-700"><Phone className="h-5 w-5"/></span><p className="text-sm font-bold text-slate-800">Representative call</p><p className="text-xs text-slate-500">Call connection will be available soon.</p><button type="button" disabled className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white opacity-50">Call coming soon</button></div>}
+                  {representativeMode === 'chat' && <div className="w-full space-y-2 text-left"><p className="text-sm font-bold text-slate-800">Representative chat</p><div className="rounded-lg bg-white p-2 text-xs text-slate-500 shadow-sm">Chat support will be available soon.</div><div className="flex gap-1"><input disabled placeholder="Type a message" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"/><button type="button" disabled className="rounded-lg bg-teal-700 px-2 text-xs text-white opacity-50">Send</button></div></div>}
+                  {representativeMode === 'video' && <div className="space-y-2"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-slate-200 text-slate-600"><Video className="h-5 w-5"/></span><p className="text-sm font-bold text-slate-800">Video call</p><p className="text-xs text-slate-500">Video connection will be available soon.</p><button type="button" disabled className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white opacity-50">Start video coming soon</button></div>}
+                </div>
+              </section>
+            </div>
+            <div className="flex h-5 shrink-0 items-center px-1" title="Drag left to expand representative panel; drag right to expand video panel">
+              <input
+                type="range"
+                min="30"
+                max="70"
+                step="1"
+                value={videoPanelWidth}
+                onChange={(event) => setVideoPanelWidth(Number(event.target.value))}
+                aria-label="Resize first aid video and representative panels"
+                aria-valuetext={`Video panel ${videoPanelWidth} percent, representative panel ${100 - videoPanelWidth} percent`}
+                className="h-2 w-full cursor-col-resize appearance-none rounded-full bg-slate-200 accent-teal-600"
+              />
+            </div>
+            </div>
+
+            <div className="flex h-[620px] flex-col gap-4">
+              <section className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${expandedSupportPanel === 'map' ? 'min-h-0 flex-1 p-5' : 'h-[160px] shrink-0'}`}>
+                {expandedSupportPanel === 'map' && <><h2 className="text-base font-bold text-slate-900">{activeEmergency.assigned_ambulance_id ? 'Live response map' : 'Nearby hospitals'}</h2><p className="mt-1 text-xs text-slate-500">{activeEmergency.assigned_ambulance_id ? 'Ambulance and hospitals near your case.' : 'Hospitals near your pickup location.'}</p></>}
+                {liveEmergencyPoint ? <div className={`${expandedSupportPanel === 'map' ? 'mt-3' : 'h-full'} overflow-hidden rounded-xl border border-slate-200`}><PuneMap hospitals={hospitals} emergencyPoint={liveEmergencyPoint} ambulances={assignedAmbulance ? [assignedAmbulance] : []} selectedHospitalId={selectedHospital?.id ?? null} onSelectHospital={() => undefined} recommendations={recommendations?.recommendations ?? []} height={expandedSupportPanel === 'map' ? '260px' : '158px'} showRouteInfo={false} showControls={expandedSupportPanel === 'map'}/></div> : <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Loading hospital map…</p>}
+                {expandedSupportPanel === 'support' && <button type="button" onClick={() => setExpandedSupportPanel('map')} className="absolute right-3 top-3 z-[600] rounded-lg bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-800 shadow">Expand map</button>}
+              </section>
+
+              <section className={`min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${expandedSupportPanel === 'support' ? 'flex-1' : 'h-20 shrink-0'}`}>
+                <button type="button" onClick={() => setExpandedSupportPanel('support')} className="text-left"><h2 className="text-base font-bold text-slate-900">Things you can do while you wait</h2>{expandedSupportPanel === 'map' && <p className="text-xs text-slate-500">Tap to open contacts, money, and insurance options.</p>}</button>
+                {expandedSupportPanel === 'support' && <>
+                <div className="mt-3 grid gap-2">
+                  <button type="button" aria-expanded={showContactPanel} onClick={() => { setShowContactPanel((visible) => !visible); setShowMoneyRequest(false); setShowInsuranceForm(false); }} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100">Inform contacts</button>
+                  <button type="button" aria-expanded={showMoneyRequest} onClick={() => { setShowMoneyRequest((visible) => !visible); setShowContactPanel(false); setShowInsuranceForm(false); }} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-950 hover:bg-amber-100">Request money</button>
+                  <button type="button" aria-expanded={showInsuranceForm} onClick={() => { setShowInsuranceForm((visible) => !visible); setShowContactPanel(false); setShowMoneyRequest(false); }} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-950 hover:bg-sky-100">Add insurance</button>
+                </div>
+
+                {showContactPanel && <div className="mt-3 border-t border-slate-100 pt-3">
+                  <p className="text-xs text-slate-500">Contacts can receive hospital and pickup details after a hospital accepts your case.</p>
+                  <form onSubmit={handleAddEmergencyContact} className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <input required maxLength={80} value={contactLabel} onChange={(event) => setContactLabel(event.target.value)} placeholder="Contact name" aria-label="Contact name" className="min-w-0 rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                    <select value={contactType} onChange={(event) => setContactType(event.target.value as 'PHONE' | 'EMAIL')} aria-label="Contact method" className="rounded-lg border border-slate-200 px-3 py-2 text-xs"><option value="PHONE">Phone / SMS</option><option value="EMAIL">Email</option></select>
+                    <input required value={contactValue} onChange={(event) => setContactValue(event.target.value)} type={contactType === 'EMAIL' ? 'email' : 'tel'} placeholder={contactType === 'EMAIL' ? 'name@example.com' : '+91 phone number'} aria-label="Contact detail" className="min-w-0 rounded-lg border border-slate-200 px-3 py-2 text-xs sm:col-span-2" />
+                    <button disabled={savingContact || emergencyContacts.length >= 5} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:col-span-2">{savingContact ? 'Saving…' : 'Add contact'}</button>
+                  </form>
+                  {emergencyContacts.length > 0 && <div className="mt-2 space-y-1">{emergencyContacts.map((contact) => <div key={contact.id} className="flex items-center justify-between gap-2 text-xs"><span className="truncate text-slate-700">{contact.label} · {contact.value}</span><button type="button" aria-label={`Remove ${contact.label}`} onClick={async () => { try { await deleteEmergencyContact(contact.id); setEmergencyContacts((items) => items.filter((item) => item.id !== contact.id)); } catch (err) { addToast('error', 'Could not remove contact', parseApiError(err).message); } }} className="shrink-0 text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button></div>)}</div>}
+                </div>}
+
+                {showMoneyRequest && <form onSubmit={handlePrepareMoneyRequest} className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                  <label className="block text-xs font-medium text-slate-700">Amount needed (₹)<input required min="1" type="number" value={requestAmount} onChange={(event) => setRequestAmount(event.target.value)} placeholder="e.g. 5000" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label>
+                  <textarea value={requestNote} onChange={(event) => setRequestNote(event.target.value)} rows={2} placeholder="Add a short note (optional)" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+                  <button className="w-full rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700">Share request</button>
+                  {moneyRequestText && <textarea readOnly value={moneyRequestText} aria-label="Money request message" rows={2} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs" />}
+                </form>}
+
+                {showInsuranceForm && <form onSubmit={handleSaveInsuranceNumber} className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                  <label className="block text-xs font-medium text-slate-700">Insurance policy number<input required value={insurancePolicyNumber} onChange={(event) => setInsurancePolicyNumber(event.target.value)} placeholder="Enter policy number" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" /></label>
+                  <button className="w-full rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800">Add policy number</button>
+                  {savedInsurancePolicyNumber && <p className="text-xs text-emerald-700">Added for this session: {savedInsurancePolicyNumber}</p>}
+                </form>}
+                </>}
+              </section>
+            </div>
+            </div>
+
+          </> : null}
         </div>
         )}
       </div>

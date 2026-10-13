@@ -7,6 +7,7 @@ from app.models.reservation import Reservation, ReservationStatus
 from app.models.ambulance import Ambulance, AmbulanceStatus
 from app.models.handoff import Handoff, HandoffStatus
 from app.models.account import Account
+from app.models.emergency_contact import EmergencyContact
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "Handoff",
     "HandoffStatus",
     "Account",
+    "EmergencyContact",
 ]
